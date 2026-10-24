@@ -32,13 +32,17 @@ app.post('/api/events', async (c) => {
     cutoffAt?: string
     groupLink?: string
     notes?: string
+    enableAttendanceType?: boolean
+    enableCarRole?: boolean
+    enablePlusOne?: boolean
   }>()
   if (!body.title) return c.json({ error: 'title required' }, 400)
   const id = randomId('ev')
   await c.env.DB.prepare(
     `INSERT INTO events
-      (id, title, organizer, event_date, meeting_location, meeting_time, fee, passenger_fee, capacity, cutoff_at, group_link, notes)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      (id, title, organizer, event_date, meeting_location, meeting_time, fee, passenger_fee, capacity, cutoff_at, group_link, notes,
+       enable_attendance_type, enable_car_role, enable_plus_one)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
   )
     .bind(
       id,
@@ -52,7 +56,10 @@ app.post('/api/events', async (c) => {
       body.capacity ?? null,
       body.cutoffAt ?? null,
       body.groupLink ?? null,
-      body.notes ?? null
+      body.notes ?? null,
+      body.enableAttendanceType ? 1 : 0,
+      body.enableCarRole ? 1 : 0,
+      body.enablePlusOne ? 1 : 0
     )
     .run()
   return c.json({ id })
@@ -69,7 +76,7 @@ app.get('/api/events/:id', async (c) => {
 app.get('/api/events/:id/roster', async (c) => {
   const id = c.req.param('id')
   const rows = await c.env.DB.prepare(
-    `SELECT display_name, picture_url, role, hide_from_roster, created_at
+    `SELECT display_name, picture_url, role, attendance_type, plus_one_count, hide_from_roster, created_at
      FROM registrations WHERE event_id = ? AND status = 'registered'
      ORDER BY created_at ASC`
   )
@@ -80,15 +87,25 @@ app.get('/api/events/:id/roster', async (c) => {
   )
     .bind(id)
     .first<{ n: number }>()
+
+  const results = rows.results as any[]
+  const totalHeadcount = results.reduce((sum, r) => sum + 1 + (r.plus_one_count ?? 0), 0)
+
   return c.json({
-    registeredCount: rows.results.length,
-    driverCount: rows.results.filter((r: any) => r.role === 'driver').length,
-    passengerCount: rows.results.filter((r: any) => r.role === 'passenger').length,
+    registeredCount: results.length,
+    totalHeadcount,
+    driverCount: results.filter((r) => r.role === 'driver').length,
+    passengerCount: results.filter((r) => r.role === 'passenger').length,
+    activityOnlyCount: results.filter((r) => r.attendance_type === 'activity_only').length,
+    activityAndMealCount: results.filter((r) => r.attendance_type === 'activity_and_meal').length,
+    mealOnlyCount: results.filter((r) => r.attendance_type === 'meal_only').length,
     cancelledCount: cancelled?.n ?? 0,
-    roster: rows.results.map((r: any) => ({
+    roster: results.map((r) => ({
       displayName: r.hide_from_roster ? null : r.display_name,
       pictureUrl: r.hide_from_roster ? null : r.picture_url,
       role: r.role,
+      attendanceType: r.attendance_type,
+      plusOneCount: r.plus_one_count ?? 0,
     })),
   })
 })
@@ -102,40 +119,51 @@ app.post('/api/events/:id/register', async (c) => {
     pictureUrl?: string
     hide?: boolean
     role?: 'driver' | 'passenger'
+    attendanceType?: 'activity_only' | 'activity_and_meal' | 'meal_only'
+    plusOneCount?: number
   }>()
   if (!body.lineUserId) return c.json({ error: 'lineUserId required' }, 400)
+  const plusOneCount = Math.max(0, Math.floor(body.plusOneCount ?? 0))
 
   const event = await c.env.DB.prepare('SELECT * FROM events WHERE id = ?').bind(id).first<any>()
   if (!event) return c.json({ error: 'not found' }, 404)
   if (event.status === 'closed') return c.json({ error: 'closed' }, 409)
 
   if (event.capacity) {
-    const current = await c.env.DB.prepare(
-      `SELECT COUNT(*) as n FROM registrations WHERE event_id = ? AND status = 'registered'`
-    )
-      .bind(id)
-      .first<{ n: number }>()
-    const alreadyIn = await c.env.DB.prepare(
-      `SELECT status FROM registrations WHERE event_id = ? AND line_user_id = ?`
+    // headcount from everyone else already registered (+1 per person, plus their companions)
+    const others = await c.env.DB.prepare(
+      `SELECT COALESCE(SUM(1 + plus_one_count), 0) as n FROM registrations
+       WHERE event_id = ? AND status = 'registered' AND line_user_id != ?`
     )
       .bind(id, body.lineUserId)
-      .first<{ status: string }>()
-    const willBeNew = !alreadyIn || alreadyIn.status !== 'registered'
-    if (willBeNew && (current?.n ?? 0) >= event.capacity) {
+      .first<{ n: number }>()
+    const thisHeadcount = 1 + plusOneCount
+    if ((others?.n ?? 0) + thisHeadcount > event.capacity) {
       return c.json({ error: 'full' }, 409)
     }
   }
 
   await c.env.DB.prepare(
-    `INSERT INTO registrations (event_id, line_user_id, display_name, picture_url, role, status, hide_from_roster, updated_at)
-     VALUES (?, ?, ?, ?, ?, 'registered', ?, datetime('now'))
+    `INSERT INTO registrations
+      (event_id, line_user_id, display_name, picture_url, role, attendance_type, plus_one_count, status, hide_from_roster, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, 'registered', ?, datetime('now'))
      ON CONFLICT(event_id, line_user_id) DO UPDATE SET
        status = 'registered', display_name = excluded.display_name,
        picture_url = excluded.picture_url, role = excluded.role,
+       attendance_type = excluded.attendance_type, plus_one_count = excluded.plus_one_count,
        hide_from_roster = excluded.hide_from_roster,
        updated_at = datetime('now')`
   )
-    .bind(id, body.lineUserId, body.displayName ?? null, body.pictureUrl ?? null, body.role ?? null, body.hide ? 1 : 0)
+    .bind(
+      id,
+      body.lineUserId,
+      body.displayName ?? null,
+      body.pictureUrl ?? null,
+      body.role ?? null,
+      body.attendanceType ?? null,
+      plusOneCount,
+      body.hide ? 1 : 0
+    )
     .run()
 
   return c.json({ ok: true })

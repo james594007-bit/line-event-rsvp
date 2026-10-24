@@ -14,16 +14,20 @@
   .count { font-size: 32px; font-weight: 700; margin: 8px 0 4px; }
   .count small { font-size: 14px; font-weight: 400; color: #666; }
   .subcount { font-size: 13px; color: #666; margin-bottom: 12px; }
-  .role-pick { display: flex; gap: 8px; margin: 8px 0; }
-  .role-pick label { flex: 1; text-align: center; border: 1px solid #ddd; border-radius: 10px; padding: 10px; font-size: 14px; background: white; }
+  .option-group { margin: 12px 0 8px; }
+  .option-label { font-size: 12px; color: #888; margin-bottom: 4px; }
+  .role-pick { display: flex; flex-wrap: wrap; gap: 8px; }
+  .role-pick label { flex: 1 1 28%; text-align: center; border: 1px solid #ddd; border-radius: 10px; padding: 10px 6px; font-size: 13px; background: white; }
   .role-pick input { margin-right: 4px; }
+  .plus-one { display: flex; align-items: center; gap: 8px; background: white; border: 1px solid #ddd; border-radius: 10px; padding: 10px 14px; font-size: 14px; }
+  .plus-one input[type=number] { width: 56px; padding: 4px; border: 1px solid #ddd; border-radius: 6px; margin-left: auto; display: none; }
   button { font-size: 16px; padding: 12px 20px; border-radius: 10px; border: none; width: 100%; margin-top: 8px; }
   .join { background: #06c755; color: white; }
   .cancel { background: #eee; color: #333; }
   .group-link { background: #e8f8ee; border-radius: 10px; padding: 12px; margin-top: 12px; font-size: 14px; display: none; }
   .group-link a { color: #06c755; font-weight: 600; }
   ul { list-style: none; padding: 0; margin: 16px 0; }
-  li { display: flex; align-items: center; gap: 8px; padding: 6px 0; font-size: 14px; }
+  li { display: flex; align-items: center; gap: 8px; padding: 6px 0; font-size: 14px; flex-wrap: wrap; }
   li .tag { font-size: 11px; color: #888; background: #f0f0f0; border-radius: 6px; padding: 1px 6px; }
   img { width: 28px; height: 28px; border-radius: 50%; background: #ddd; }
   .status { padding: 10px; border-radius: 8px; background: #fff3cd; font-size: 13px; margin-bottom: 12px; display: none; }
@@ -37,10 +41,30 @@
   <div class="count"><span id="count">-</span> <small>人報名</small></div>
   <div class="subcount" id="subcount"></div>
 
-  <div class="role-pick">
-    <label><input type="radio" name="role" value="driver" checked />開車</label>
-    <label><input type="radio" name="role" value="passenger" />共乘(乘客)</label>
+  <div class="option-group" id="attendanceTypeGroup" style="display:none">
+    <div class="option-label">參加類型</div>
+    <div class="role-pick">
+      <label><input type="radio" name="attendanceType" value="activity_only" checked />只參加活動</label>
+      <label><input type="radio" name="attendanceType" value="activity_and_meal" />活動+聚餐</label>
+      <label><input type="radio" name="attendanceType" value="meal_only" />聚餐</label>
+    </div>
   </div>
+
+  <div class="option-group" id="carRoleGroup" style="display:none">
+    <div class="option-label">車輛</div>
+    <div class="role-pick">
+      <label><input type="radio" name="role" value="driver" checked />開車</label>
+      <label><input type="radio" name="role" value="passenger" />共乘(乘客)</label>
+    </div>
+  </div>
+
+  <div class="option-group" id="plusOneGroup" style="display:none">
+    <label class="plus-one">
+      <input type="checkbox" id="plusOneToggle" /> 攜伴
+      <input type="number" id="plusOneCount" min="0" value="0" /> 位
+    </label>
+  </div>
+
   <button class="join" id="joinBtn">我要參加</button>
   <button class="cancel" id="cancelBtn">取消報名</button>
 
@@ -60,6 +84,7 @@ let eventData = null;
 function show(id, html) { document.getElementById(id).innerHTML = html; }
 function showStatus(msg) { const el = document.getElementById('status'); el.textContent = msg; el.style.display = 'block'; }
 function row(label, value) { return value ? `<div><span class="label">${label}</span><span>${value}</span></div>` : ''; }
+const attendanceLabel = { activity_only: '只參加活動', activity_and_meal: '活動+聚餐', meal_only: '聚餐' };
 
 async function loadEvent() {
   const res = await fetch(`/api/events/${eventId}`);
@@ -81,30 +106,54 @@ async function loadEvent() {
   } else {
     document.getElementById('groupLinkBox').style.display = 'none';
   }
+
+  document.getElementById('attendanceTypeGroup').style.display = eventData.enable_attendance_type ? 'block' : 'none';
+  document.getElementById('carRoleGroup').style.display = eventData.enable_car_role ? 'block' : 'none';
+  document.getElementById('plusOneGroup').style.display = eventData.enable_plus_one ? 'block' : 'none';
 }
 
 async function loadRoster() {
   const res = await fetch(`/api/events/${eventId}/roster`);
   const data = await res.json();
   show('count', data.registeredCount);
-  show('subcount', `開車 ${data.driverCount} 人 · 共乘 ${data.passengerCount} 人`);
+
+  const subParts = [];
+  if (eventData.enable_car_role) subParts.push(`開車 ${data.driverCount} · 共乘 ${data.passengerCount}`);
+  if (eventData.enable_attendance_type) {
+    subParts.push(`只活動 ${data.activityOnlyCount} · 活動+聚餐 ${data.activityAndMealCount} · 只聚餐 ${data.mealOnlyCount}`);
+  }
+  if (eventData.enable_plus_one && data.totalHeadcount !== data.registeredCount) {
+    subParts.push(`含攜伴共 ${data.totalHeadcount} 人`);
+  }
+  show('subcount', subParts.join(' · '));
+
   const ul = document.getElementById('roster');
   ul.innerHTML = '';
   data.roster.forEach((r) => {
     if (!r.displayName) return;
     const li = document.createElement('li');
-    const tag = r.role === 'driver' ? '開車' : r.role === 'passenger' ? '共乘' : '';
-    li.innerHTML = `<img src="${r.pictureUrl ?? ''}" /> <span>${r.displayName}</span> ${tag ? `<span class="tag">${tag}</span>` : ''}`;
+    const tags = [];
+    if (r.role === 'driver') tags.push('開車');
+    if (r.role === 'passenger') tags.push('共乘');
+    if (attendanceLabel[r.attendanceType]) tags.push(attendanceLabel[r.attendanceType]);
+    if (r.plusOneCount) tags.push(`+${r.plusOneCount}`);
+    li.innerHTML = `<img src="${r.pictureUrl ?? ''}" /> <span>${r.displayName}</span> ${tags.map((t) => `<span class="tag">${t}</span>`).join('')}`;
     ul.appendChild(li);
   });
 }
 
 async function register() {
-  const role = document.querySelector('input[name=role]:checked').value;
+  const payload = { lineUserId: profile.userId, displayName: profile.displayName, pictureUrl: profile.pictureUrl };
+  if (eventData.enable_car_role) payload.role = document.querySelector('input[name=role]:checked').value;
+  if (eventData.enable_attendance_type) payload.attendanceType = document.querySelector('input[name=attendanceType]:checked').value;
+  if (eventData.enable_plus_one) {
+    const bringing = document.getElementById('plusOneToggle').checked;
+    payload.plusOneCount = bringing ? parseInt(document.getElementById('plusOneCount').value || '0', 10) : 0;
+  }
   const res = await fetch(`/api/events/${eventId}/register`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ lineUserId: profile.userId, displayName: profile.displayName, pictureUrl: profile.pictureUrl, role }),
+    body: JSON.stringify(payload),
   });
   if (!res.ok) {
     const err = await res.json();
@@ -133,6 +182,11 @@ async function init() {
   profile = await liff.getProfile();
   document.getElementById('joinBtn').onclick = register;
   document.getElementById('cancelBtn').onclick = cancel;
+  document.getElementById('plusOneToggle').onchange = (e) => {
+    const countInput = document.getElementById('plusOneCount');
+    countInput.style.display = e.target.checked ? 'inline-block' : 'none';
+    if (!e.target.checked) countInput.value = 0;
+  };
   await loadEvent();
   await loadRoster();
 }
