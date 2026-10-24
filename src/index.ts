@@ -7,6 +7,7 @@ type Bindings = {
   LIFF_ID: string
   LINE_CHANNEL_ACCESS_TOKEN: string
   LINE_CHANNEL_SECRET: string
+  ADMIN_PASSCODE: string
 }
 
 const app = new Hono<{ Bindings: Bindings }>()
@@ -15,11 +16,19 @@ function randomId(prefix: string) {
   return `${prefix}_${crypto.randomUUID().replace(/-/g, '').slice(0, 10)}`
 }
 
+async function requireAdmin(c: any, next: () => Promise<void>) {
+  const given = c.req.header('x-admin-passcode')
+  if (!given || given !== c.env.ADMIN_PASSCODE) {
+    return c.json({ error: 'unauthorized' }, 401)
+  }
+  await next()
+}
+
 // ---- config for the LIFF page ----
 app.get('/api/config', (c) => c.json({ liffId: c.env.LIFF_ID }))
 
-// ---- create an event (no auth yet — see README) ----
-app.post('/api/events', async (c) => {
+// ---- create an event (admin only) ----
+app.post('/api/events', requireAdmin, async (c) => {
   const body = await c.req.json<{
     title: string
     organizer?: string
@@ -65,8 +74,8 @@ app.post('/api/events', async (c) => {
   return c.json({ id })
 })
 
-// ---- update an event (no auth yet — see README) ----
-app.put('/api/events/:id', async (c) => {
+// ---- update an event (admin only) ----
+app.put('/api/events/:id', requireAdmin, async (c) => {
   const id = c.req.param('id')
   const body = await c.req.json<{
     title: string
@@ -118,8 +127,8 @@ app.put('/api/events/:id', async (c) => {
   return c.json({ ok: true })
 })
 
-// ---- list recent events (for the admin page) ----
-app.get('/api/events', async (c) => {
+// ---- list recent events (admin only) ----
+app.get('/api/events', requireAdmin, async (c) => {
   const rows = await c.env.DB.prepare(
     `SELECT id, title, event_date, capacity, cutoff_at, status, created_at
      FROM events ORDER BY created_at DESC LIMIT 50`

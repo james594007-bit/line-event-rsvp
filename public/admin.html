@@ -77,6 +77,29 @@
 let liffId = '';
 let editingId = null;
 
+function getPasscode() {
+  let code = localStorage.getItem('adminPasscode');
+  if (!code) {
+    code = prompt('請輸入管理密碼');
+    if (code) localStorage.setItem('adminPasscode', code);
+  }
+  return code || '';
+}
+
+async function adminFetch(url, options = {}) {
+  const res = await fetch(url, {
+    ...options,
+    headers: { ...(options.headers || {}), 'X-Admin-Passcode': getPasscode() },
+  });
+  if (res.status === 401) {
+    localStorage.removeItem('adminPasscode');
+    alert('密碼錯誤,請重新輸入');
+    location.reload();
+    throw new Error('unauthorized');
+  }
+  return res;
+}
+
 async function loadConfig() {
   const res = await fetch('/api/config');
   const cfg = await res.json();
@@ -159,7 +182,7 @@ function showLinks(id) {
 }
 
 async function loadEventList() {
-  const res = await fetch('/api/events');
+  const res = await adminFetch('/api/events');
   const events = await res.json();
   const ul = document.getElementById('eventList');
   ul.innerHTML = '';
@@ -185,7 +208,7 @@ document.getElementById('eventForm').onsubmit = async (e) => {
 
   const url = editingId ? `/api/events/${editingId}` : '/api/events';
   const method = editingId ? 'PUT' : 'POST';
-  const res = await fetch(url, {
+  const res = await adminFetch(url, {
     method,
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(data),
