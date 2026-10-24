@@ -65,6 +65,68 @@ app.post('/api/events', async (c) => {
   return c.json({ id })
 })
 
+// ---- update an event (no auth yet — see README) ----
+app.put('/api/events/:id', async (c) => {
+  const id = c.req.param('id')
+  const body = await c.req.json<{
+    title: string
+    organizer?: string
+    eventDate?: string
+    meetingLocation?: string
+    meetingTime?: string
+    fee?: string
+    passengerFee?: string
+    capacity?: number
+    cutoffAt?: string
+    groupLink?: string
+    notes?: string
+    status?: 'open' | 'closed'
+    enableAttendanceType?: boolean
+    enableCarRole?: boolean
+    enablePlusOne?: boolean
+  }>()
+  if (!body.title) return c.json({ error: 'title required' }, 400)
+
+  const result = await c.env.DB.prepare(
+    `UPDATE events SET
+      title = ?, organizer = ?, event_date = ?, meeting_location = ?, meeting_time = ?,
+      fee = ?, passenger_fee = ?, capacity = ?, cutoff_at = ?, group_link = ?, notes = ?,
+      status = ?, enable_attendance_type = ?, enable_car_role = ?, enable_plus_one = ?
+     WHERE id = ?`
+  )
+    .bind(
+      body.title,
+      body.organizer ?? null,
+      body.eventDate ?? null,
+      body.meetingLocation ?? null,
+      body.meetingTime ?? null,
+      body.fee ?? null,
+      body.passengerFee ?? null,
+      body.capacity ?? null,
+      body.cutoffAt ?? null,
+      body.groupLink ?? null,
+      body.notes ?? null,
+      body.status ?? 'open',
+      body.enableAttendanceType ? 1 : 0,
+      body.enableCarRole ? 1 : 0,
+      body.enablePlusOne ? 1 : 0,
+      id
+    )
+    .run()
+
+  if (result.meta.changes === 0) return c.json({ error: 'not found' }, 404)
+  return c.json({ ok: true })
+})
+
+// ---- list recent events (for the admin page) ----
+app.get('/api/events', async (c) => {
+  const rows = await c.env.DB.prepare(
+    `SELECT id, title, event_date, capacity, cutoff_at, status, created_at
+     FROM events ORDER BY created_at DESC LIMIT 50`
+  ).all()
+  return c.json(rows.results)
+})
+
 // ---- event info + live roster (public, no auth — this is deliberate) ----
 app.get('/api/events/:id', async (c) => {
   const id = c.req.param('id')
