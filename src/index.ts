@@ -20,13 +20,40 @@ app.get('/api/config', (c) => c.json({ liffId: c.env.LIFF_ID }))
 
 // ---- create an event (no auth yet — see README) ----
 app.post('/api/events', async (c) => {
-  const body = await c.req.json<{ title: string; capacity?: number; cutoffAt?: string }>()
+  const body = await c.req.json<{
+    title: string
+    organizer?: string
+    eventDate?: string
+    meetingLocation?: string
+    meetingTime?: string
+    fee?: string
+    passengerFee?: string
+    capacity?: number
+    cutoffAt?: string
+    groupLink?: string
+    notes?: string
+  }>()
   if (!body.title) return c.json({ error: 'title required' }, 400)
   const id = randomId('ev')
   await c.env.DB.prepare(
-    'INSERT INTO events (id, title, capacity, cutoff_at) VALUES (?, ?, ?, ?)'
+    `INSERT INTO events
+      (id, title, organizer, event_date, meeting_location, meeting_time, fee, passenger_fee, capacity, cutoff_at, group_link, notes)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
   )
-    .bind(id, body.title, body.capacity ?? null, body.cutoffAt ?? null)
+    .bind(
+      id,
+      body.title,
+      body.organizer ?? null,
+      body.eventDate ?? null,
+      body.meetingLocation ?? null,
+      body.meetingTime ?? null,
+      body.fee ?? null,
+      body.passengerFee ?? null,
+      body.capacity ?? null,
+      body.cutoffAt ?? null,
+      body.groupLink ?? null,
+      body.notes ?? null
+    )
     .run()
   return c.json({ id })
 })
@@ -42,7 +69,7 @@ app.get('/api/events/:id', async (c) => {
 app.get('/api/events/:id/roster', async (c) => {
   const id = c.req.param('id')
   const rows = await c.env.DB.prepare(
-    `SELECT display_name, picture_url, hide_from_roster, created_at
+    `SELECT display_name, picture_url, role, hide_from_roster, created_at
      FROM registrations WHERE event_id = ? AND status = 'registered'
      ORDER BY created_at ASC`
   )
@@ -55,10 +82,13 @@ app.get('/api/events/:id/roster', async (c) => {
     .first<{ n: number }>()
   return c.json({
     registeredCount: rows.results.length,
+    driverCount: rows.results.filter((r: any) => r.role === 'driver').length,
+    passengerCount: rows.results.filter((r: any) => r.role === 'passenger').length,
     cancelledCount: cancelled?.n ?? 0,
     roster: rows.results.map((r: any) => ({
       displayName: r.hide_from_roster ? null : r.display_name,
       pictureUrl: r.hide_from_roster ? null : r.picture_url,
+      role: r.role,
     })),
   })
 })
@@ -66,7 +96,13 @@ app.get('/api/events/:id/roster', async (c) => {
 // ---- register / cancel (dedup on event_id + line_user_id) ----
 app.post('/api/events/:id/register', async (c) => {
   const id = c.req.param('id')
-  const body = await c.req.json<{ lineUserId: string; displayName?: string; pictureUrl?: string; hide?: boolean }>()
+  const body = await c.req.json<{
+    lineUserId: string
+    displayName?: string
+    pictureUrl?: string
+    hide?: boolean
+    role?: 'driver' | 'passenger'
+  }>()
   if (!body.lineUserId) return c.json({ error: 'lineUserId required' }, 400)
 
   const event = await c.env.DB.prepare('SELECT * FROM events WHERE id = ?').bind(id).first<any>()
@@ -91,14 +127,15 @@ app.post('/api/events/:id/register', async (c) => {
   }
 
   await c.env.DB.prepare(
-    `INSERT INTO registrations (event_id, line_user_id, display_name, picture_url, status, hide_from_roster, updated_at)
-     VALUES (?, ?, ?, ?, 'registered', ?, datetime('now'))
+    `INSERT INTO registrations (event_id, line_user_id, display_name, picture_url, role, status, hide_from_roster, updated_at)
+     VALUES (?, ?, ?, ?, ?, 'registered', ?, datetime('now'))
      ON CONFLICT(event_id, line_user_id) DO UPDATE SET
        status = 'registered', display_name = excluded.display_name,
-       picture_url = excluded.picture_url, hide_from_roster = excluded.hide_from_roster,
+       picture_url = excluded.picture_url, role = excluded.role,
+       hide_from_roster = excluded.hide_from_roster,
        updated_at = datetime('now')`
   )
-    .bind(id, body.lineUserId, body.displayName ?? null, body.pictureUrl ?? null, body.hide ? 1 : 0)
+    .bind(id, body.lineUserId, body.displayName ?? null, body.pictureUrl ?? null, body.role ?? null, body.hide ? 1 : 0)
     .run()
 
   return c.json({ ok: true })
