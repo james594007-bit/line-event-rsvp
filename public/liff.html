@@ -79,7 +79,7 @@ async function loadEvent() {
   if (eventData.group_link) {
     document.getElementById('groupLinkA').href = eventData.group_link;
   } else {
-    document.querySelector('.group-link').remove();
+    document.getElementById('groupLinkBox').style.display = 'none';
   }
 }
 
