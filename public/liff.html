@@ -129,7 +129,7 @@ async function init() {
   const cfgRes = await fetch('/api/config');
   const cfg = await cfgRes.json();
   await liff.init({ liffId: cfg.liffId });
-  if (!liff.isLoggedIn() && !liff.isInClient()) { liff.login(); return; }
+  if (!liff.isLoggedIn() && !liff.isInClient()) { liff.login({ redirectUri: location.href }); return; }
   profile = await liff.getProfile();
   document.getElementById('joinBtn').onclick = register;
   document.getElementById('cancelBtn').onclick = cancel;
