@@ -1,0 +1,100 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>活動報名</title>
+<style>
+  body { font-family: -apple-system, "PingFang TC", sans-serif; margin: 0; padding: 16px; background: #f7f7f7; color: #222; }
+  h1 { font-size: 20px; margin: 0 0 4px; }
+  .meta { color: #666; font-size: 13px; margin-bottom: 16px; }
+  .count { font-size: 32px; font-weight: 700; margin: 8px 0; }
+  .count small { font-size: 14px; font-weight: 400; color: #666; }
+  button { font-size: 16px; padding: 12px 20px; border-radius: 10px; border: none; width: 100%; margin-top: 8px; }
+  .join { background: #06c755; color: white; }
+  .cancel { background: #eee; color: #333; }
+  ul { list-style: none; padding: 0; margin: 16px 0; }
+  li { display: flex; align-items: center; gap: 8px; padding: 6px 0; font-size: 14px; }
+  img { width: 28px; height: 28px; border-radius: 50%; background: #ddd; }
+  .status { padding: 10px; border-radius: 8px; background: #fff3cd; font-size: 13px; margin-bottom: 12px; display: none; }
+</style>
+</head>
+<body>
+  <h1 id="title">載入中...</h1>
+  <div class="meta" id="meta"></div>
+  <div class="status" id="status"></div>
+  <div class="count"><span id="count">-</span> <small>人報名</small></div>
+  <button class="join" id="joinBtn">我要參加</button>
+  <button class="cancel" id="cancelBtn">取消報名</button>
+  <ul id="roster"></ul>
+
+<script src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script>
+<script>
+const params = new URLSearchParams(location.search);
+const eventId = params.get('event');
+let profile = null;
+
+function show(id, text) { document.getElementById(id).textContent = text; }
+function showStatus(msg) { const el = document.getElementById('status'); el.textContent = msg; el.style.display = 'block'; }
+
+async function loadEvent() {
+  const res = await fetch(`/api/events/${eventId}`);
+  const event = await res.json();
+  show('title', event.title ?? '找不到活動');
+  show('meta', event.capacity ? `名額 ${event.capacity} 人${event.cutoff_at ? ' · 截止 ' + event.cutoff_at : ''}` : (event.cutoff_at ? '截止 ' + event.cutoff_at : ''));
+  if (event.status === 'closed') showStatus('已截止報名,名單已確定');
+}
+
+async function loadRoster() {
+  const res = await fetch(`/api/events/${eventId}/roster`);
+  const data = await res.json();
+  show('count', data.registeredCount);
+  const ul = document.getElementById('roster');
+  ul.innerHTML = '';
+  data.roster.forEach((r) => {
+    if (!r.displayName) return;
+    const li = document.createElement('li');
+    li.innerHTML = `<img src="${r.pictureUrl ?? ''}" /> <span>${r.displayName}</span>`;
+    ul.appendChild(li);
+  });
+}
+
+async function register() {
+  const res = await fetch(`/api/events/${eventId}/register`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ lineUserId: profile.userId, displayName: profile.displayName, pictureUrl: profile.pictureUrl }),
+  });
+  if (!res.ok) {
+    const err = await res.json();
+    showStatus(err.error === 'full' ? '已經額滿了' : '報名失敗,請稍後再試');
+    return;
+  }
+  await loadRoster();
+}
+
+async function cancel() {
+  await fetch(`/api/events/${eventId}/cancel`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ lineUserId: profile.userId }),
+  });
+  await loadRoster();
+}
+
+async function init() {
+  const cfgRes = await fetch('/api/config');
+  const cfg = await cfgRes.json();
+  await liff.init({ liffId: cfg.liffId });
+  if (!liff.isLoggedIn() && !liff.isInClient()) { liff.login(); return; }
+  profile = await liff.getProfile();
+  document.getElementById('joinBtn').onclick = register;
+  document.getElementById('cancelBtn').onclick = cancel;
+  await loadEvent();
+  await loadRoster();
+}
+
+init().catch((e) => showStatus('初始化失敗: ' + e.message));
+</script>
+</body>
+</html>
