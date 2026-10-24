@@ -1,0 +1,93 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>版主後台</title>
+<style>
+  body { font-family: -apple-system, "PingFang TC", sans-serif; margin: 0; padding: 16px; background: #f7f7f7; color: #222; max-width: 640px; }
+  h1 { font-size: 20px; display: flex; justify-content: space-between; align-items: center; }
+  h1 button { font-size: 13px; padding: 6px 12px; width: auto; margin: 0; }
+  h2 { font-size: 15px; margin-top: 28px; color: #555; }
+  form { background: white; border-radius: 10px; padding: 16px; display: flex; flex-direction: column; gap: 10px; }
+  label { font-size: 13px; color: #555; display: flex; flex-direction: column; gap: 4px; }
+  input[type=text], input[type=number], input[type=date], textarea { font-size: 14px; padding: 8px; border: 1px solid #ddd; border-radius: 8px; font-family: inherit; }
+  textarea { min-height: 100px; }
+  .checks { display: flex; flex-wrap: wrap; gap: 14px; font-size: 13px; }
+  .checks label { flex-direction: row; align-items: center; gap: 6px; }
+  .two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  button { font-size: 15px; padding: 10px 18px; border-radius: 8px; border: none; background: #06c755; color: white; cursor: pointer; }
+  button.secondary { background: #eee; color: #333; }
+  .result { background: #e8f8ee; border-radius: 10px; padding: 12px 14px; margin-top: 12px; font-size: 13px; word-break: break-all; display: none; }
+  .result a { color: #06c755; font-weight: 600; }
+  .event-list { list-style: none; padding: 0; }
+  .event-list li { background: white; border-radius: 10px; padding: 10px 14px; margin-bottom: 8px; font-size: 14px; }
+  .event-list .row { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+  .event-list .meta { color: #888; font-size: 12px; }
+  .event-list .headcount { color: #06c755; font-weight: 600; font-size: 13px; cursor: pointer; margin-top: 2px; }
+  .event-list a.edit { color: #06c755; font-size: 13px; white-space: nowrap; }
+  .event-list a.delete { color: #e0453c; font-size: 13px; white-space: nowrap; }
+  .roster-box { display: none; margin-top: 10px; border-top: 1px solid #eee; padding-top: 8px; }
+  .roster-box ul { list-style: none; padding: 0; margin: 0; }
+  .roster-box li { padding: 3px 0; font-size: 13px; background: none; }
+  .roster-box .tag { font-size: 10px; color: #888; background: #f0f0f0; border-radius: 6px; padding: 1px 6px; margin-left: 4px; }
+  .badge { font-size: 11px; background: #f0f0f0; color: #888; border-radius: 6px; padding: 1px 6px; }
+  .blocked { background: white; border-radius: 10px; padding: 16px; font-size: 14px; }
+</style>
+</head>
+<body>
+  <h1>版主後台 <button id="logoutBtn" class="secondary">登出</button></h1>
+  <div id="blocked" class="blocked" style="display:none"></div>
+
+  <div id="dashboard" style="display:none">
+    <h2 id="formTitle">建立新活動</h2>
+    <form id="eventForm">
+      <label>主題 *<input type="text" id="f_title" required /></label>
+      <div class="two-col">
+        <label>主揪<input type="text" id="f_organizer" /></label>
+        <label>日期(顯示用)<input type="text" id="f_eventDate" placeholder="10/29(四)" /></label>
+      </div>
+      <label>活動結束日期 *(用於資料保留計算)<input type="date" id="f_endsAt" required /></label>
+      <div class="two-col">
+        <label>集合地點<input type="text" id="f_meetingLocation" /></label>
+        <label>集合時間<input type="text" id="f_meetingTime" placeholder="08:00" /></label>
+      </div>
+      <div class="two-col">
+        <label>費用<input type="text" id="f_fee" /></label>
+        <label>乘客車資<input type="text" id="f_passengerFee" /></label>
+      </div>
+      <div class="two-col">
+        <label>人數上限<input type="number" id="f_capacity" min="1" /></label>
+        <label>報名截止日(顯示用)<input type="text" id="f_cutoffAt" placeholder="10/28" /></label>
+      </div>
+      <label>活動群連結<input type="text" id="f_groupLink" placeholder="https://line.me/ti/g/..." /></label>
+      <label>備註 / 活動聲明<textarea id="f_notes"></textarea></label>
+
+      <div class="checks">
+        <label><input type="checkbox" id="f_enableAttendanceType" />參加類型(只活動/活動+聚餐/聚餐)</label>
+        <label><input type="checkbox" id="f_enableCarRole" />車輛(開車/共乘)</label>
+        <label><input type="checkbox" id="f_enablePlusOne" />攜伴人數</label>
+      </div>
+
+      <label id="statusField" style="display:none">狀態
+        <select id="f_status">
+          <option value="open">開放報名</option>
+          <option value="closed">已截止</option>
+        </select>
+      </label>
+
+      <div style="display:flex; gap:8px;">
+        <button type="submit" id="submitBtn">建立活動</button>
+        <button type="button" class="secondary" id="cancelEditBtn" style="display:none">取消編輯</button>
+      </div>
+    </form>
+
+    <div class="result" id="result"></div>
+
+    <h2>我的活動</h2>
+    <ul class="event-list" id="eventList"></ul>
+  </div>
+
+<script src="mod.js"></script>
+</body>
+</html>

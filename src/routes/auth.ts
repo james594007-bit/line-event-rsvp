@@ -7,7 +7,7 @@ import { createSession, SESSION_COOKIE_NAME, revokeSession } from '../lib/sessio
 import { ensureOwnerBootstrap, getModeratorByLineUserId } from '../lib/moderators'
 import { checkRateLimit } from '../lib/ratelimit'
 import { signPayload, randomToken } from '../lib/crypto'
-import { CSRF_COOKIE_NAME, requireAuthenticated } from '../middleware'
+import { CSRF_COOKIE_NAME, requireAuthenticated, requireSameOrigin } from '../middleware'
 
 const OAUTH_BUNDLE_COOKIE = 'line_oauth'
 export const VERIFIED_IDENTITY_COOKIE = 'verified_identity' // short-lived bridge: LINE-verified but not yet an applicant
@@ -102,7 +102,7 @@ authRoutes.get('/auth/line/callback', async (c) => {
   return c.redirect('/mod-apply', 302)
 })
 
-authRoutes.post('/auth/logout', requireAuthenticated, async (c) => {
+authRoutes.post('/auth/logout', requireAuthenticated, requireSameOrigin, async (c) => {
   const token = getCookie(c, SESSION_COOKIE_NAME)
   await revokeSession(c.env.DB, token)
   deleteCookie(c, SESSION_COOKIE_NAME, { path: '/' })

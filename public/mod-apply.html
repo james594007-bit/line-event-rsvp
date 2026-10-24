@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>版主申請</title>
+<style>
+  body { font-family: -apple-system, "PingFang TC", sans-serif; margin: 0; padding: 16px; background: #f7f7f7; color: #222; max-width: 480px; }
+  h1 { font-size: 20px; }
+  .card { background: white; border-radius: 10px; padding: 16px; margin-top: 12px; font-size: 14px; line-height: 1.8; }
+  button { font-size: 16px; padding: 12px 20px; border-radius: 10px; border: none; width: 100%; margin-top: 12px; background: #06c755; color: white; }
+  .status { padding: 10px; border-radius: 8px; font-size: 13px; margin-top: 12px; }
+  .status.pending { background: #fff3cd; }
+  .status.rejected { background: #fde2e2; }
+  .status.suspended { background: #fde2e2; }
+  .status.approved { background: #e8f8ee; }
+</style>
+</head>
+<body>
+  <h1>版主申請</h1>
+  <div class="card">
+    <div>社群:<strong id="communityName">人生漫旅FB社團Line社群</strong></div>
+    <div id="explain">用LINE登入後,送出申請成為本社群的版主。申請後需要由擁有者審核。</div>
+  </div>
+  <div id="statusBox"></div>
+  <button id="actionBtn">開始申請</button>
+
+<script src="mod-apply.js"></script>
+</body>
+</html>

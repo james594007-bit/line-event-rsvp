@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>擁有者後台</title>
+<style>
+  body { font-family: -apple-system, "PingFang TC", sans-serif; margin: 0; padding: 16px; background: #f7f7f7; color: #222; max-width: 640px; }
+  h1 { font-size: 20px; display: flex; justify-content: space-between; align-items: center; }
+  h1 button { font-size: 13px; padding: 6px 12px; width: auto; margin: 0; }
+  h2 { font-size: 15px; margin-top: 24px; color: #555; }
+  .row-item { background: white; border-radius: 10px; padding: 12px 14px; margin-bottom: 8px; display: flex; justify-content: space-between; align-items: center; gap: 10px; font-size: 14px; }
+  .meta { color: #888; font-size: 12px; }
+  .actions { display: flex; gap: 8px; }
+  button { font-size: 13px; padding: 8px 14px; border-radius: 8px; border: none; cursor: pointer; }
+  .approve { background: #06c755; color: white; }
+  .reject { background: #e0453c; color: white; }
+  .suspend { background: #f0ad4e; color: white; }
+  .restore { background: #06c755; color: white; }
+  .empty { color: #aaa; font-size: 13px; }
+  .blocked { background: white; border-radius: 10px; padding: 16px; font-size: 14px; }
+</style>
+</head>
+<body>
+  <h1>擁有者後台 <button id="logoutBtn" style="background:#eee;color:#333;">登出</button></h1>
+  <div id="blocked" class="blocked" style="display:none"></div>
+  <div id="dashboard" style="display:none">
+    <h2>待審核</h2>
+    <div id="pendingList"></div>
+    <h2>已核准</h2>
+    <div id="approvedList"></div>
+    <h2>已停權</h2>
+    <div id="suspendedList"></div>
+    <h2>已拒絕</h2>
+    <div id="rejectedList"></div>
+  </div>
+
+<script src="owner.js"></script>
+</body>
+</html>

@@ -15,5 +15,23 @@ run_worker_first = true
 
 [vars]
 LIFF_ID = "2012189885-02IXRFbj"
+# Channel ID of the SAME LINE Login channel LIFF_ID already lives under
+# (Basic settings → Channel ID in that channel, not the LIFF app ID).
+# Not secret — this is the OAuth client_id, meant to be public.
+# TODO(james): fill in once you've added a Callback URL for
+# <worker-url>/auth/line/callback in that channel's LINE Login settings.
+LINE_LOGIN_CHANNEL_ID = "REPLACE_WITH_LINE_LOGIN_CHANNEL_ID"
 
-# Set these with: wrangler secret put LINE_CHANNEL_ACCESS_TOKEN / LINE_CHANNEL_SECRET
+# Secrets still needed before owner-access can run for real (none of these
+# exist yet — this branch has not touched any production secret):
+#   wrangler secret put LINE_LOGIN_CHANNEL_SECRET   # same channel's Channel Secret
+#   wrangler secret put OWNER_LINE_USER_ID           # James's own verified LINE user id (see final report for how to get it safely)
+#   wrangler secret put COOKIE_SIGNING_SECRET        # any long random string, e.g. `openssl rand -base64 32`
+#
+# Also still unset (dormant push-message code path, unrelated to this work):
+#   wrangler secret put LINE_CHANNEL_ACCESS_TOKEN / LINE_CHANNEL_SECRET
+
+# Retention sweep (src/lib/retention.ts) — wire up once this branch ships.
+# Config only; does not run until deployed, and this branch does not deploy.
+# [triggers]
+# crons = ["0 18 * * *"]  # once daily; handler not yet added to index.ts's `scheduled` export

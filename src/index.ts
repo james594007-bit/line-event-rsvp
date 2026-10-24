@@ -8,6 +8,7 @@ import { modRoutes } from './routes/mod'
 import { ownerRoutes } from './routes/owner'
 import { isValidIsoDate } from './lib/event-ownership'
 import { toPublicEvent, type EventRow } from './lib/public-event'
+import { runRetentionSweep } from './lib/retention'
 
 // Synthetic moderator row (seeded in migrations/0003) that legacy,
 // passcode-gated events are attributed to, since the shared-passcode model
@@ -410,4 +411,13 @@ app.route('/', ownerRoutes)
 // ---- everything else: static assets ----
 app.get('*', (c) => c.env.ASSETS.fetch(c.req.raw))
 
-export default app
+export default {
+  fetch: app.fetch,
+  // Wired up for when wrangler.toml's commented-out [triggers] cron is
+  // enabled at a real deploy — doing nothing until then. Runs with
+  // dryRun: false deliberately (a real sweep, not a drill) since this only
+  // ever fires on a schedule Cloudflare itself triggers in production.
+  async scheduled(_event: ScheduledEvent, env: Bindings, ctx: ExecutionContext) {
+    ctx.waitUntil(runRetentionSweep(env.DB, new Date(), { dryRun: false }))
+  },
+}
