@@ -10,10 +10,11 @@ LINE 活動報名統計工具 MVP。參加者在 LINE 裡打開一個連結報�
 
 ## 現在能跑的部分
 
-- `POST /api/events` 建立活動(主題/主揪/日期/集合地點時間/費用/乘客車資/人數/截止日/活動群連結/備註)
+- `POST /api/events` 建立活動(主題/主揪/日期/集合地點時間/費用/乘客車資/人數/截止日/活動群連結/備註,加上三個開關 `enableAttendanceType` / `enableCarRole` / `enablePlusOne`,各活動自己決定要不要顯示)
 - `GET /api/events/:id` 活動資訊
-- `GET /api/events/:id/roster` 即時人數(含開車/共乘分計) + 名單
-- `POST /api/events/:id/register` / `.../cancel` 報名 / 取消(以 LINE userId 排重複,報名要帶 `role: "driver" | "passenger"`)
+- `GET /api/events/:id/roster` 即時人數(總報名數 + 含攜伴總人數 + 開車/共乘/參加類型分計) + 名單
+- `POST /api/events/:id/register` / `.../cancel` 報名 / 取消(以 LINE userId 排重複;依開關帶 `role: "driver"|"passenger"`、`attendanceType: "activity_only"|"activity_and_meal"|"meal_only"`、`plusOneCount: number`)
+- 額滿判斷算的是「總人數」(報名人數 + 攜伴人數之和),不是單純報名筆數
 - `public/liff.html` 報名頁面:顯示活動資訊、即時人數、開車或共乘選擇、報名後顯示活動群連結
 - `POST /api/events/:id/invite-link` **先不用管**——這是等以後要做「成團才建群、自動推播邀請」的活動類型才需要,目前範本是活動群連結一開始就知道,不需要這個
 
