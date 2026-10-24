@@ -214,7 +214,10 @@ async function loadEventList() {
         <div class="roster-summary"></div>
         <ul class="roster-registered"></ul>
         <div class="roster-cancelled"></div>
-        <button type="button" class="secondary copy-roster" style="margin-top:8px;">複製名單文字</button>
+        <div style="display:flex; gap:8px; margin-top:8px;">
+          <button type="button" class="secondary copy-roster">複製名單文字</button>
+          <button type="button" class="secondary export-csv">匯出CSV(可開Google試算表)</button>
+        </div>
       </div>
     `;
     li.dataset.title = ev.title;
@@ -275,6 +278,37 @@ async function toggleRoster(id, li) {
       () => alert('已複製名單'),
       () => alert('複製失敗,請手動選取')
     );
+  };
+
+  box.querySelector('.export-csv').onclick = () => {
+    const csvField = (v) => {
+      const s = String(v ?? '');
+      return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+    };
+    const rows = [['姓名', '開車/共乘', '參加類型', '攜伴人數', '狀態']];
+    data.roster.forEach((r) => {
+      rows.push([
+        r.displayName ?? '(隱藏姓名)',
+        r.role === 'driver' ? '開車' : r.role === 'passenger' ? '共乘' : '',
+        attendanceLabel[r.attendanceType] ?? '',
+        r.plusOneCount || 0,
+        '已報名',
+      ]);
+    });
+    data.cancelledRoster.forEach((r) => {
+      rows.push([r.displayName ?? '(隱藏姓名)', '', '', '', '已取消']);
+    });
+    // UTF-8 BOM so Excel/Google Sheets don't mangle Chinese characters on import
+    const csv = '﻿' + rows.map((row) => row.map(csvField).join(',')).join('\n');
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${li.dataset.title}-報名名單.csv`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
   };
 
   box.style.display = 'block';
