@@ -20,10 +20,16 @@
   .result { background: #e8f8ee; border-radius: 10px; padding: 12px 14px; margin-top: 12px; font-size: 13px; word-break: break-all; display: none; }
   .result a { color: #06c755; font-weight: 600; }
   .event-list { list-style: none; padding: 0; }
-  .event-list li { background: white; border-radius: 10px; padding: 10px 14px; margin-bottom: 8px; font-size: 14px; display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+  .event-list li { background: white; border-radius: 10px; padding: 10px 14px; margin-bottom: 8px; font-size: 14px; }
+  .event-list .row { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
   .event-list .meta { color: #888; font-size: 12px; }
+  .event-list .headcount { color: #06c755; font-weight: 600; font-size: 13px; cursor: pointer; margin-top: 2px; }
   .event-list a.edit { color: #06c755; font-size: 13px; white-space: nowrap; }
   .event-list a.delete { color: #e0453c; font-size: 13px; white-space: nowrap; }
+  .roster-box { display: none; margin-top: 10px; border-top: 1px solid #eee; padding-top: 8px; }
+  .roster-box ul { list-style: none; padding: 0; margin: 0; }
+  .roster-box li { padding: 3px 0; font-size: 13px; background: none; }
+  .roster-box .tag { font-size: 10px; color: #888; background: #f0f0f0; border-radius: 6px; padding: 1px 6px; margin-left: 4px; }
   .badge { font-size: 11px; background: #f0f0f0; color: #888; border-radius: 6px; padding: 1px 6px; }
 </style>
 </head>
@@ -190,20 +196,48 @@ async function loadEventList() {
   events.forEach((ev) => {
     const li = document.createElement('li');
     const statusBadge = ev.status === 'closed' ? '<span class="badge">已截止</span>' : '';
+    const capLabel = ev.capacity ? `${ev.registered_count}/${ev.capacity}` : `${ev.registered_count}`;
+    const headcountExtra = ev.total_headcount !== ev.registered_count ? `(含攜伴共${ev.total_headcount}人)` : '';
     li.innerHTML = `
-      <div>
-        <div>${ev.title} ${statusBadge}</div>
-        <div class="meta">${ev.event_date ?? ''} ${ev.capacity ? `· 上限${ev.capacity}人` : ''} · 截止 ${ev.cutoff_at ?? '未設定'}</div>
+      <div class="row">
+        <div>
+          <div>${ev.title} ${statusBadge}</div>
+          <div class="meta">${ev.event_date ?? ''} ${ev.capacity ? `· 上限${ev.capacity}人` : ''} · 截止 ${ev.cutoff_at ?? '未設定'}</div>
+          <div class="headcount">${capLabel} 人報名 ${headcountExtra} · 查看名單 ▾</div>
+        </div>
+        <div style="display:flex; gap:10px;">
+          <a class="edit" href="#" data-id="${ev.id}">編輯</a>
+          <a class="delete" href="#" data-id="${ev.id}">刪除</a>
+        </div>
       </div>
-      <div style="display:flex; gap:10px;">
-        <a class="edit" href="#" data-id="${ev.id}">編輯</a>
-        <a class="delete" href="#" data-id="${ev.id}">刪除</a>
-      </div>
+      <div class="roster-box"><ul></ul></div>
     `;
     li.querySelector('a.edit').onclick = (e) => { e.preventDefault(); startEdit(ev.id); };
     li.querySelector('a.delete').onclick = (e) => { e.preventDefault(); deleteEvent(ev.id, ev.title); };
+    li.querySelector('.headcount').onclick = () => toggleRoster(ev.id, li);
     ul.appendChild(li);
   });
+}
+
+const attendanceLabel = { activity_only: '只參加活動', activity_and_meal: '活動+聚餐', meal_only: '聚餐' };
+
+async function toggleRoster(id, li) {
+  const box = li.querySelector('.roster-box');
+  if (box.style.display === 'block') { box.style.display = 'none'; return; }
+  const res = await fetch(`/api/events/${id}/roster`);
+  const data = await res.json();
+  const listEl = box.querySelector('ul');
+  listEl.innerHTML = data.roster.length
+    ? data.roster.map((r) => {
+        const tags = [];
+        if (r.role === 'driver') tags.push('開車');
+        if (r.role === 'passenger') tags.push('共乘');
+        if (attendanceLabel[r.attendanceType]) tags.push(attendanceLabel[r.attendanceType]);
+        if (r.plusOneCount) tags.push(`+${r.plusOneCount}`);
+        return `<li>${r.displayName ?? '(隱藏姓名)'} ${tags.map((t) => `<span class="tag">${t}</span>`).join('')}</li>`;
+      }).join('')
+    : '<li style="color:#aaa">還沒有人報名</li>';
+  box.style.display = 'block';
 }
 
 document.getElementById('eventForm').onsubmit = async (e) => {

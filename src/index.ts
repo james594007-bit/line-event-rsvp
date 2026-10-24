@@ -127,11 +127,17 @@ app.put('/api/events/:id', requireAdmin, async (c) => {
   return c.json({ ok: true })
 })
 
-// ---- list recent events (admin only) ----
+// ---- list recent events, with live headcount (admin only) ----
 app.get('/api/events', requireAdmin, async (c) => {
   const rows = await c.env.DB.prepare(
-    `SELECT id, title, event_date, capacity, cutoff_at, status, created_at
-     FROM events ORDER BY created_at DESC LIMIT 50`
+    `SELECT e.id, e.title, e.event_date, e.capacity, e.cutoff_at, e.status, e.created_at,
+       COUNT(CASE WHEN r.status = 'registered' THEN 1 END) as registered_count,
+       COALESCE(SUM(CASE WHEN r.status = 'registered' THEN 1 + r.plus_one_count END), 0) as total_headcount
+     FROM events e
+     LEFT JOIN registrations r ON r.event_id = e.id
+     GROUP BY e.id
+     ORDER BY e.created_at DESC
+     LIMIT 50`
   ).all()
   return c.json(rows.results)
 })
