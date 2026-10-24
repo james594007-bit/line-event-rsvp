@@ -19,8 +19,10 @@
   .role-pick { display: flex; flex-wrap: wrap; gap: 8px; }
   .role-pick label { flex: 1 1 28%; text-align: center; border: 1px solid #ddd; border-radius: 10px; padding: 10px 6px; font-size: 13px; background: white; }
   .role-pick input { margin-right: 4px; }
-  .plus-one { display: flex; align-items: center; gap: 8px; background: white; border: 1px solid #ddd; border-radius: 10px; padding: 10px 14px; font-size: 14px; }
-  .plus-one input[type=number] { width: 56px; padding: 4px; border: 1px solid #ddd; border-radius: 6px; margin-left: auto; display: none; }
+  .plus-one { display: flex; align-items: center; gap: 12px; background: white; border: 1px solid #ddd; border-radius: 10px; padding: 10px 14px; font-size: 14px; }
+  .stepper { display: flex; align-items: center; gap: 12px; margin-left: auto; }
+  .stepper button { width: 32px; height: 32px; padding: 0; margin: 0; border-radius: 50%; border: 1px solid #ddd; background: #f0f0f0; font-size: 18px; line-height: 1; color: #333; }
+  .stepper span { min-width: 18px; text-align: center; font-size: 16px; font-weight: 600; }
   button { font-size: 16px; padding: 12px 20px; border-radius: 10px; border: none; width: 100%; margin-top: 8px; }
   .join { background: #06c755; color: white; }
   .cancel { background: #eee; color: #333; }
@@ -59,10 +61,14 @@
   </div>
 
   <div class="option-group" id="plusOneGroup" style="display:none">
-    <label class="plus-one">
-      <input type="checkbox" id="plusOneToggle" /> 攜伴
-      <input type="number" id="plusOneCount" min="0" value="0" /> 位
-    </label>
+    <div class="plus-one">
+      <span>攜伴人數</span>
+      <div class="stepper">
+        <button type="button" id="plusOneMinus">−</button>
+        <span id="plusOneValue">0</span>
+        <button type="button" id="plusOnePlus">＋</button>
+      </div>
+    </div>
   </div>
 
   <button class="join" id="joinBtn">我要參加</button>
@@ -80,6 +86,7 @@ const params = new URLSearchParams(location.search);
 const eventId = params.get('event');
 let profile = null;
 let eventData = null;
+let plusOneCount = 0;
 
 function show(id, html) { document.getElementById(id).innerHTML = html; }
 function showStatus(msg) { const el = document.getElementById('status'); el.textContent = msg; el.style.display = 'block'; }
@@ -146,10 +153,7 @@ async function register() {
   const payload = { lineUserId: profile.userId, displayName: profile.displayName, pictureUrl: profile.pictureUrl };
   if (eventData.enable_car_role) payload.role = document.querySelector('input[name=role]:checked').value;
   if (eventData.enable_attendance_type) payload.attendanceType = document.querySelector('input[name=attendanceType]:checked').value;
-  if (eventData.enable_plus_one) {
-    const bringing = document.getElementById('plusOneToggle').checked;
-    payload.plusOneCount = bringing ? parseInt(document.getElementById('plusOneCount').value || '0', 10) : 0;
-  }
+  if (eventData.enable_plus_one) payload.plusOneCount = plusOneCount;
   const res = await fetch(`/api/events/${eventId}/register`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -182,10 +186,13 @@ async function init() {
   profile = await liff.getProfile();
   document.getElementById('joinBtn').onclick = register;
   document.getElementById('cancelBtn').onclick = cancel;
-  document.getElementById('plusOneToggle').onchange = (e) => {
-    const countInput = document.getElementById('plusOneCount');
-    countInput.style.display = e.target.checked ? 'inline-block' : 'none';
-    if (!e.target.checked) countInput.value = 0;
+  document.getElementById('plusOneMinus').onclick = () => {
+    plusOneCount = Math.max(0, plusOneCount - 1);
+    document.getElementById('plusOneValue').textContent = plusOneCount;
+  };
+  document.getElementById('plusOnePlus').onclick = () => {
+    plusOneCount = Math.min(20, plusOneCount + 1);
+    document.getElementById('plusOneValue').textContent = plusOneCount;
   };
   await loadEvent();
   await loadRoster();
