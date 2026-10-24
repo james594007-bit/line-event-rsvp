@@ -62,7 +62,7 @@ MVP已經部署上線,核心功能(報名/取消/排重複/額滿/三組可選�
 
 ## 連結
 
-- GitHub(私有repo):https://github.com/james594007-bit/line-event-rsvp
+- GitHub:https://github.com/james594007-bit/line-event-rsvp
 - 正式服務:https://line-event-rsvp.james594007.workers.dev
 - 管理後台:https://line-event-rsvp.james594007.workers.dev/admin(密碼另外跟James拿,這份文件是公開的不寫在這裡)
 - 真實測試案例(松蘿湖健行報名頁):https://liff.line.me/2012189885-02IXRFbj?event=ev_28ec66adbd
