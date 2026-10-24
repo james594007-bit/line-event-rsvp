@@ -6,7 +6,8 @@
     "dev": "wrangler dev",
     "deploy": "wrangler deploy",
     "db:migrate:local": "wrangler d1 migrations apply line_event_rsvp --local",
-    "db:migrate:remote": "wrangler d1 migrations apply line_event_rsvp --remote"
+    "db:migrate:remote": "wrangler d1 migrations apply line_event_rsvp --remote",
+    "test": "vitest run"
   },
   "dependencies": {
     "hono": "^4.6.0",
@@ -15,6 +16,8 @@
   "devDependencies": {
     "wrangler": "^3.90.0",
     "typescript": "^5.6.0",
-    "@cloudflare/workers-types": "^4.20241011.0"
+    "@cloudflare/workers-types": "^4.20241011.0",
+    "@cloudflare/vitest-pool-workers": "^0.5.33",
+    "vitest": "^2.1.4"
   }
 }

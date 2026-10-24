@@ -1,5 +1,7 @@
 import { Hono } from 'hono'
-import { messagingApi } from '@line/bot-sdk'
+// @line/bot-sdk pulls in axios, which chokes the Workers bundler/test runtime
+// unless it's only loaded lazily where actually used (push messaging, still
+// unused/dormant in this project — see invite-link handler below).
 
 type Bindings = {
   DB: D1Database
@@ -293,6 +295,7 @@ app.post('/api/events/:id/invite-link', async (c) => {
     .bind(id)
     .all<{ line_user_id: string }>()
 
+  const { messagingApi } = await import('@line/bot-sdk')
   const client = new messagingApi.MessagingApiClient({ channelAccessToken: c.env.LINE_CHANNEL_ACCESS_TOKEN })
   const results = await Promise.allSettled(
     registered.results.map((r) =>
