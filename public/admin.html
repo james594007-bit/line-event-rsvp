@@ -264,9 +264,13 @@ async function toggleRoster(id, li) {
   box.querySelector('.copy-roster').onclick = () => {
     const lines = [
       li.dataset.title,
-      `報名 ${data.registeredCount} 人${data.totalHeadcount !== data.registeredCount ? `(含攜伴共${data.totalHeadcount}人)` : ''}`,
+      `報名 ${data.registeredCount} 人`,
+      ...summaryParts.filter((s) => !s.startsWith('已取消')),
+      '',
       ...data.roster.map((r, i) => `${i + 1}. ${r.displayName ?? '(隱藏姓名)'} ${rosterEntryTags(r).join(' ')}`.trim()),
-    ].filter(Boolean);
+      '',
+      `已取消 ${data.cancelledCount} 人${data.cancelledRoster.length ? `:${data.cancelledRoster.map((r) => r.displayName ?? '(隱藏姓名)').join('、')}` : ''}`,
+    ].filter((line) => line !== null && line !== undefined);
     navigator.clipboard.writeText(lines.join('\n')).then(
       () => alert('已複製名單'),
       () => alert('複製失敗,請手動選取')
