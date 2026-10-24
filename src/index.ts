@@ -136,6 +136,15 @@ app.get('/api/events', requireAdmin, async (c) => {
   return c.json(rows.results)
 })
 
+// ---- delete an event and its registrations (admin only) ----
+app.delete('/api/events/:id', requireAdmin, async (c) => {
+  const id = c.req.param('id')
+  await c.env.DB.prepare('DELETE FROM registrations WHERE event_id = ?').bind(id).run()
+  const result = await c.env.DB.prepare('DELETE FROM events WHERE id = ?').bind(id).run()
+  if (result.meta.changes === 0) return c.json({ error: 'not found' }, 404)
+  return c.json({ ok: true })
+})
+
 // ---- event info + live roster (public, no auth — this is deliberate) ----
 app.get('/api/events/:id', async (c) => {
   const id = c.req.param('id')

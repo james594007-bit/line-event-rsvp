@@ -23,6 +23,7 @@
   .event-list li { background: white; border-radius: 10px; padding: 10px 14px; margin-bottom: 8px; font-size: 14px; display: flex; justify-content: space-between; align-items: center; gap: 8px; }
   .event-list .meta { color: #888; font-size: 12px; }
   .event-list a.edit { color: #06c755; font-size: 13px; white-space: nowrap; }
+  .event-list a.delete { color: #e0453c; font-size: 13px; white-space: nowrap; }
   .badge { font-size: 11px; background: #f0f0f0; color: #888; border-radius: 6px; padding: 1px 6px; }
 </style>
 </head>
@@ -194,9 +195,13 @@ async function loadEventList() {
         <div>${ev.title} ${statusBadge}</div>
         <div class="meta">${ev.event_date ?? ''} ${ev.capacity ? `· 上限${ev.capacity}人` : ''} · 截止 ${ev.cutoff_at ?? '未設定'}</div>
       </div>
-      <a class="edit" href="#" data-id="${ev.id}">編輯</a>
+      <div style="display:flex; gap:10px;">
+        <a class="edit" href="#" data-id="${ev.id}">編輯</a>
+        <a class="delete" href="#" data-id="${ev.id}">刪除</a>
+      </div>
     `;
     li.querySelector('a.edit').onclick = (e) => { e.preventDefault(); startEdit(ev.id); };
+    li.querySelector('a.delete').onclick = (e) => { e.preventDefault(); deleteEvent(ev.id, ev.title); };
     ul.appendChild(li);
   });
 }
@@ -220,6 +225,14 @@ document.getElementById('eventForm').onsubmit = async (e) => {
   showLinks(id);
   await loadEventList();
 };
+
+async function deleteEvent(id, title) {
+  if (!confirm(`確定要刪除「${title}」?已經報名的人數跟名單會一起被清掉,刪了就回不來了。`)) return;
+  const res = await adminFetch(`/api/events/${id}`, { method: 'DELETE' });
+  if (!res.ok) { alert('刪除失敗'); return; }
+  if (editingId === id) resetForm();
+  await loadEventList();
+}
 
 document.getElementById('cancelEditBtn').onclick = resetForm;
 
