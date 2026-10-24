@@ -111,3 +111,17 @@ CREATE TABLE registrations (
 CREATE INDEX idx_registrations_event ON registrations(event_id);
 
 DROP TABLE events_legacy_test_data;
+
+-- De-identified summary kept when an event itself is purged by the 1-year
+-- retention sweep (docs/OWNER-ACCESS-PRD.md §8.3 / FR allows retaining
+-- de-identified stats). No LINE user ids, display names, or other
+-- participant-identifying fields — only aggregate counts.
+CREATE TABLE event_archive_stats (
+  event_id TEXT PRIMARY KEY,
+  moderator_id TEXT NOT NULL,
+  title TEXT NOT NULL,
+  ends_at TEXT NOT NULL,
+  final_registered_count INTEGER NOT NULL,
+  final_total_headcount INTEGER NOT NULL,
+  archived_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
