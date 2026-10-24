@@ -13,6 +13,7 @@ export interface ModeratorRow {
   decided_at: string | null
   decided_by: string | null
   suspend_reason: string | null
+  pending_display_name: string | null
   created_at: string
 }
 

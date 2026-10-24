@@ -18,6 +18,10 @@ CREATE TABLE moderators (
   decided_at TEXT,
   decided_by TEXT REFERENCES moderators(id),
   suspend_reason TEXT,
+  -- Live LINE display name at application time, shown to the owner ONLY
+  -- while status = 'pending' (FR-06: temporary display during review is
+  -- allowed; no permanent profile of it). Cleared on approve/reject.
+  pending_display_name TEXT,
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
@@ -28,6 +32,14 @@ CREATE TABLE moderators (
 -- more fragile to migrate later than a plain application-level check.
 CREATE INDEX idx_moderators_line_user ON moderators(line_user_id);
 CREATE INDEX idx_moderators_status ON moderators(status);
+
+-- Synthetic row the still-live, passcode-gated legacy event endpoints
+-- attribute their events to, since that shared-passcode model has no real
+-- per-moderator identity. line_user_id is a value that can never collide
+-- with a real LINE user id (those are always "U" + 32 hex chars). Removed
+-- along with the rest of the legacy system at the stage 5 cutover.
+INSERT INTO moderators (id, line_user_id, role, status, decided_at)
+VALUES ('mod_legacy_admin', 'legacy:shared-passcode-admin', 'moderator', 'approved', datetime('now'));
 
 CREATE TABLE sessions (
   -- id is the SHA-256 hash (hex) of the random token stored in the cookie.

@@ -15,6 +15,7 @@ const STATEMENTS = [
     decided_at TEXT,
     decided_by TEXT REFERENCES moderators(id),
     suspend_reason TEXT,
+    pending_display_name TEXT,
     created_at TEXT NOT NULL DEFAULT (datetime('now'))
   )`,
   `CREATE INDEX IF NOT EXISTS idx_moderators_line_user ON moderators(line_user_id)`,
@@ -97,6 +98,12 @@ export async function applyTestSchema(db: D1Database) {
   for (const stmt of STATEMENTS) {
     await db.prepare(stmt).run()
   }
+  await db
+    .prepare(
+      `INSERT OR IGNORE INTO moderators (id, line_user_id, role, status, decided_at)
+       VALUES ('mod_legacy_admin', 'legacy:shared-passcode-admin', 'moderator', 'approved', datetime('now'))`
+    )
+    .run()
 }
 
 export async function resetTestSchema(db: D1Database) {

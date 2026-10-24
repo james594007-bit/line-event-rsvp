@@ -2,17 +2,39 @@ import { Hono } from 'hono'
 // @line/bot-sdk pulls in axios, which chokes the Workers bundler/test runtime
 // unless it's only loaded lazily where actually used (push messaging, still
 // unused/dormant in this project — see invite-link handler below).
+import type { Bindings } from './bindings'
+import { authRoutes } from './routes/auth'
+import { modRoutes } from './routes/mod'
+import { ownerRoutes } from './routes/owner'
+import { isValidIsoDate } from './lib/event-ownership'
+import { toPublicEvent, type EventRow } from './lib/public-event'
 
-type Bindings = {
-  DB: D1Database
-  ASSETS: Fetcher
-  LIFF_ID: string
-  LINE_CHANNEL_ACCESS_TOKEN: string
-  LINE_CHANNEL_SECRET: string
-  ADMIN_PASSCODE: string
-}
+// Synthetic moderator row (seeded in migrations/0003) that legacy,
+// passcode-gated events are attributed to, since the shared-passcode model
+// has no concept of "which moderator". Only exists to satisfy the new
+// events.moderator_id NOT NULL constraint without breaking the old path —
+// removed along with the rest of the legacy system in the stage 5 cutover.
+const LEGACY_MODERATOR_ID = 'mod_legacy_admin'
 
 const app = new Hono<{ Bindings: Bindings }>()
+
+// ---- CSP (defense-in-depth against XSS) ----
+// New owner-access pages (mod/mod-apply/owner) are written without any
+// inline <script>, so they get a strict script-src. The pre-existing
+// liff.html/admin.html pages still have their JS inline — fully extracting
+// that is a real (and separately risky, since liff.html is the live
+// participant registration flow) refactor left as a follow-up, so those two
+// paths get 'unsafe-inline' on script-src specifically, not globally.
+app.use('*', async (c, next) => {
+  await next()
+  const path = new URL(c.req.url).pathname
+  const legacyInlineScriptPages = path === '/liff' || path === '/liff.html' || path === '/admin' || path === '/admin.html'
+  const scriptSrc = legacyInlineScriptPages ? "'self' 'unsafe-inline' https://static.line-scdn.net" : "'self' https://static.line-scdn.net"
+  c.header(
+    'Content-Security-Policy',
+    `default-src 'self'; script-src ${scriptSrc}; style-src 'self' 'unsafe-inline'; img-src 'self' https: data:; connect-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'`
+  )
+})
 
 function randomId(prefix: string) {
   return `${prefix}_${crypto.randomUUID().replace(/-/g, '').slice(0, 10)}`
@@ -30,11 +52,15 @@ async function requireAdmin(c: any, next: () => Promise<void>) {
 app.get('/api/config', (c) => c.json({ liffId: c.env.LIFF_ID }))
 
 // ---- create an event (admin only) ----
+// NOTE: owned by the synthetic LEGACY_MODERATOR_ID (see constant below), not
+// a real moderator — this whole passcode-gated path is slated for removal
+// in the stage 5 cutover once the owner-access system goes live for real.
 app.post('/api/events', requireAdmin, async (c) => {
   const body = await c.req.json<{
     title: string
     organizer?: string
     eventDate?: string
+    endsAt?: string
     meetingLocation?: string
     meetingTime?: string
     fee?: string
@@ -48,18 +74,21 @@ app.post('/api/events', requireAdmin, async (c) => {
     enablePlusOne?: boolean
   }>()
   if (!body.title) return c.json({ error: 'title required' }, 400)
+  if (!isValidIsoDate(body.endsAt)) return c.json({ error: 'endsAt must be an ISO date (YYYY-MM-DD)' }, 400)
   const id = randomId('ev')
   await c.env.DB.prepare(
     `INSERT INTO events
-      (id, title, organizer, event_date, meeting_location, meeting_time, fee, passenger_fee, capacity, cutoff_at, group_link, notes,
+      (id, moderator_id, title, organizer, event_date, ends_at, meeting_location, meeting_time, fee, passenger_fee, capacity, cutoff_at, group_link, notes,
        enable_attendance_type, enable_car_role, enable_plus_one)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
   )
     .bind(
       id,
+      LEGACY_MODERATOR_ID,
       body.title,
       body.organizer ?? null,
       body.eventDate ?? null,
+      body.endsAt,
       body.meetingLocation ?? null,
       body.meetingTime ?? null,
       body.fee ?? null,
@@ -83,6 +112,7 @@ app.put('/api/events/:id', requireAdmin, async (c) => {
     title: string
     organizer?: string
     eventDate?: string
+    endsAt?: string
     meetingLocation?: string
     meetingTime?: string
     fee?: string
@@ -97,10 +127,11 @@ app.put('/api/events/:id', requireAdmin, async (c) => {
     enablePlusOne?: boolean
   }>()
   if (!body.title) return c.json({ error: 'title required' }, 400)
+  if (!isValidIsoDate(body.endsAt)) return c.json({ error: 'endsAt must be an ISO date (YYYY-MM-DD)' }, 400)
 
   const result = await c.env.DB.prepare(
     `UPDATE events SET
-      title = ?, organizer = ?, event_date = ?, meeting_location = ?, meeting_time = ?,
+      title = ?, organizer = ?, event_date = ?, ends_at = ?, meeting_location = ?, meeting_time = ?,
       fee = ?, passenger_fee = ?, capacity = ?, cutoff_at = ?, group_link = ?, notes = ?,
       status = ?, enable_attendance_type = ?, enable_car_role = ?, enable_plus_one = ?
      WHERE id = ?`
@@ -109,6 +140,7 @@ app.put('/api/events/:id', requireAdmin, async (c) => {
       body.title,
       body.organizer ?? null,
       body.eventDate ?? null,
+      body.endsAt,
       body.meetingLocation ?? null,
       body.meetingTime ?? null,
       body.fee ?? null,
@@ -156,9 +188,11 @@ app.delete('/api/events/:id', requireAdmin, async (c) => {
 // ---- event info + live roster (public, no auth — this is deliberate) ----
 app.get('/api/events/:id', async (c) => {
   const id = c.req.param('id')
-  const event = await c.env.DB.prepare('SELECT * FROM events WHERE id = ?').bind(id).first()
+  const event = await c.env.DB.prepare('SELECT * FROM events WHERE id = ?').bind(id).first<EventRow>()
   if (!event) return c.json({ error: 'not found' }, 404)
-  return c.json(event)
+  // whitelist fields only — `events` now also carries moderator_id/ends_at,
+  // neither of which this public, unauthenticated endpoint may return.
+  return c.json(toPublicEvent(event))
 })
 
 app.get('/api/events/:id/roster', async (c) => {
@@ -367,6 +401,11 @@ app.get('/liff', async (c) => {
   )
   return c.html(html)
 })
+
+// ---- owner-access: LINE OAuth login, moderator self-service, owner review ----
+app.route('/', authRoutes)
+app.route('/', modRoutes)
+app.route('/', ownerRoutes)
 
 // ---- everything else: static assets ----
 app.get('*', (c) => c.env.ASSETS.fetch(c.req.raw))

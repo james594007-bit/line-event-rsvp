@@ -36,12 +36,15 @@ export type ApplyResult =
  * database-level "one pending row" constraint (product decision: rejected
  * applicants may re-apply any time, with no cooldown — see tech assessment).
  */
-export async function applyAsModerator(db: D1Database, lineUserId: string): Promise<ApplyResult> {
+export async function applyAsModerator(db: D1Database, lineUserId: string, displayName?: string): Promise<ApplyResult> {
   const existing = await getModeratorByLineUserId(db, lineUserId)
 
   if (!existing) {
     const id = randomId('mod')
-    await db.prepare('INSERT INTO moderators (id, line_user_id, status) VALUES (?, ?, ?)').bind(id, lineUserId, 'pending').run()
+    await db
+      .prepare('INSERT INTO moderators (id, line_user_id, status, pending_display_name) VALUES (?, ?, ?, ?)')
+      .bind(id, lineUserId, 'pending', displayName ?? null)
+      .run()
     await writeAudit(db, { eventType: 'apply', targetModeratorId: id, actorModeratorId: id, result: 'success' })
     return { outcome: 'created', moderatorId: id }
   }
@@ -56,8 +59,10 @@ export async function applyAsModerator(db: D1Database, lineUserId: string): Prom
 
   // status === 'rejected': allowed to re-apply (product decision: no cooldown, no cap)
   await db
-    .prepare(`UPDATE moderators SET status = 'pending', applied_at = datetime('now'), decided_at = NULL, decided_by = NULL, suspend_reason = NULL WHERE id = ?`)
-    .bind(existing.id)
+    .prepare(
+      `UPDATE moderators SET status = 'pending', applied_at = datetime('now'), decided_at = NULL, decided_by = NULL, suspend_reason = NULL, pending_display_name = ? WHERE id = ?`
+    )
+    .bind(displayName ?? null, existing.id)
     .run()
   await writeAudit(db, { eventType: 'apply', targetModeratorId: existing.id, actorModeratorId: existing.id, result: 'success' })
   return { outcome: 'reapplied', moderatorId: existing.id }
@@ -74,7 +79,10 @@ export async function approveModerator(db: D1Database, actorId: string, targetId
     return { ok: false, reason: 'wrong_state' }
   }
 
-  await db.prepare(`UPDATE moderators SET status = 'approved', decided_at = datetime('now'), decided_by = ? WHERE id = ?`).bind(actorId, targetId).run()
+  await db
+    .prepare(`UPDATE moderators SET status = 'approved', decided_at = datetime('now'), decided_by = ?, pending_display_name = NULL WHERE id = ?`)
+    .bind(actorId, targetId)
+    .run()
   await writeAudit(db, { eventType: 'approve', targetModeratorId: targetId, actorModeratorId: actorId, result: 'success' })
   return { ok: true }
 }
@@ -88,7 +96,10 @@ export async function rejectModerator(db: D1Database, actorId: string, targetId:
     return { ok: false, reason: 'wrong_state' }
   }
 
-  await db.prepare(`UPDATE moderators SET status = 'rejected', decided_at = datetime('now'), decided_by = ? WHERE id = ?`).bind(actorId, targetId).run()
+  await db
+    .prepare(`UPDATE moderators SET status = 'rejected', decided_at = datetime('now'), decided_by = ?, pending_display_name = NULL WHERE id = ?`)
+    .bind(actorId, targetId)
+    .run()
   await writeAudit(db, { eventType: 'reject', targetModeratorId: targetId, actorModeratorId: actorId, result: 'success' })
   return { ok: true }
 }
