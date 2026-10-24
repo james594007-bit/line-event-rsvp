@@ -168,13 +168,16 @@ app.get('/api/events/:id/roster', async (c) => {
   )
     .bind(id)
     .all()
-  const cancelled = await c.env.DB.prepare(
-    `SELECT COUNT(*) as n FROM registrations WHERE event_id = ? AND status = 'cancelled'`
+  const cancelledRows = await c.env.DB.prepare(
+    `SELECT display_name, hide_from_roster, updated_at
+     FROM registrations WHERE event_id = ? AND status = 'cancelled'
+     ORDER BY updated_at DESC`
   )
     .bind(id)
-    .first<{ n: number }>()
+    .all()
 
   const results = rows.results as any[]
+  const cancelledResults = cancelledRows.results as any[]
   const totalHeadcount = results.reduce((sum, r) => sum + 1 + (r.plus_one_count ?? 0), 0)
 
   return c.json({
@@ -185,13 +188,17 @@ app.get('/api/events/:id/roster', async (c) => {
     activityOnlyCount: results.filter((r) => r.attendance_type === 'activity_only').length,
     activityAndMealCount: results.filter((r) => r.attendance_type === 'activity_and_meal').length,
     mealOnlyCount: results.filter((r) => r.attendance_type === 'meal_only').length,
-    cancelledCount: cancelled?.n ?? 0,
+    cancelledCount: cancelledResults.length,
     roster: results.map((r) => ({
       displayName: r.hide_from_roster ? null : r.display_name,
       pictureUrl: r.hide_from_roster ? null : r.picture_url,
       role: r.role,
       attendanceType: r.attendance_type,
       plusOneCount: r.plus_one_count ?? 0,
+    })),
+    cancelledRoster: cancelledResults.map((r) => ({
+      displayName: r.hide_from_roster ? null : r.display_name,
+      cancelledAt: r.updated_at,
     })),
   })
 })

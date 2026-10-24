@@ -210,8 +210,14 @@ async function loadEventList() {
           <a class="delete" href="#" data-id="${ev.id}">刪除</a>
         </div>
       </div>
-      <div class="roster-box"><ul></ul></div>
+      <div class="roster-box">
+        <div class="roster-summary"></div>
+        <ul class="roster-registered"></ul>
+        <div class="roster-cancelled"></div>
+        <button type="button" class="secondary copy-roster" style="margin-top:8px;">複製名單文字</button>
+      </div>
     `;
+    li.dataset.title = ev.title;
     li.querySelector('a.edit').onclick = (e) => { e.preventDefault(); startEdit(ev.id); };
     li.querySelector('a.delete').onclick = (e) => { e.preventDefault(); deleteEvent(ev.id, ev.title); };
     li.querySelector('.headcount').onclick = () => toggleRoster(ev.id, li);
@@ -221,22 +227,52 @@ async function loadEventList() {
 
 const attendanceLabel = { activity_only: '只參加活動', activity_and_meal: '活動+聚餐', meal_only: '聚餐' };
 
+function rosterEntryTags(r) {
+  const tags = [];
+  if (r.role === 'driver') tags.push('開車');
+  if (r.role === 'passenger') tags.push('共乘');
+  if (attendanceLabel[r.attendanceType]) tags.push(attendanceLabel[r.attendanceType]);
+  if (r.plusOneCount) tags.push(`+${r.plusOneCount}`);
+  return tags;
+}
+
 async function toggleRoster(id, li) {
   const box = li.querySelector('.roster-box');
   if (box.style.display === 'block') { box.style.display = 'none'; return; }
   const res = await fetch(`/api/events/${id}/roster`);
   const data = await res.json();
-  const listEl = box.querySelector('ul');
+
+  const summaryParts = [];
+  if (data.driverCount || data.passengerCount) summaryParts.push(`開車 ${data.driverCount} · 共乘 ${data.passengerCount}`);
+  if (data.activityOnlyCount || data.activityAndMealCount || data.mealOnlyCount) {
+    summaryParts.push(`只活動 ${data.activityOnlyCount} · 活動+聚餐 ${data.activityAndMealCount} · 只聚餐 ${data.mealOnlyCount}`);
+  }
+  if (data.totalHeadcount !== data.registeredCount) summaryParts.push(`含攜伴共 ${data.totalHeadcount} 人`);
+  summaryParts.push(`已取消 ${data.cancelledCount} 人`);
+  box.querySelector('.roster-summary').innerHTML = summaryParts.map((s) => `<div class="meta">${s}</div>`).join('');
+
+  const listEl = box.querySelector('.roster-registered');
   listEl.innerHTML = data.roster.length
-    ? data.roster.map((r) => {
-        const tags = [];
-        if (r.role === 'driver') tags.push('開車');
-        if (r.role === 'passenger') tags.push('共乘');
-        if (attendanceLabel[r.attendanceType]) tags.push(attendanceLabel[r.attendanceType]);
-        if (r.plusOneCount) tags.push(`+${r.plusOneCount}`);
-        return `<li>${r.displayName ?? '(隱藏姓名)'} ${tags.map((t) => `<span class="tag">${t}</span>`).join('')}</li>`;
-      }).join('')
+    ? data.roster.map((r) => `<li>${r.displayName ?? '(隱藏姓名)'} ${rosterEntryTags(r).map((t) => `<span class="tag">${t}</span>`).join('')}</li>`).join('')
     : '<li style="color:#aaa">還沒有人報名</li>';
+
+  const cancelledEl = box.querySelector('.roster-cancelled');
+  cancelledEl.innerHTML = data.cancelledRoster.length
+    ? `<div class="meta" style="margin-top:6px;">已取消:${data.cancelledRoster.map((r) => r.displayName ?? '(隱藏姓名)').join('、')}</div>`
+    : '';
+
+  box.querySelector('.copy-roster').onclick = () => {
+    const lines = [
+      li.dataset.title,
+      `報名 ${data.registeredCount} 人${data.totalHeadcount !== data.registeredCount ? `(含攜伴共${data.totalHeadcount}人)` : ''}`,
+      ...data.roster.map((r, i) => `${i + 1}. ${r.displayName ?? '(隱藏姓名)'} ${rosterEntryTags(r).join(' ')}`.trim()),
+    ].filter(Boolean);
+    navigator.clipboard.writeText(lines.join('\n')).then(
+      () => alert('已複製名單'),
+      () => alert('複製失敗,請手動選取')
+    );
+  };
+
   box.style.display = 'block';
 }
 
