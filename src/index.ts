@@ -213,7 +213,38 @@ async function validSignature(body: string, signature: string, channelSecret: st
   return expected === signature
 }
 
-// ---- everything else: static LIFF page / assets ----
+// ---- LIFF page, with per-event title/description for LINE's link-preview crawler ----
+function escapeHtml(s: string) {
+  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
+}
+
+app.get('/liff', async (c) => {
+  const eventId = c.req.query('event')
+  let title = '活動報名系統'
+  let description = '點開看看目前報名人數,一起參加吧'
+
+  if (eventId) {
+    const event = await c.env.DB.prepare('SELECT title, event_date, capacity FROM events WHERE id = ?')
+      .bind(eventId)
+      .first<any>()
+    if (event) {
+      title = event.title
+      description = [event.event_date, event.capacity ? `限${event.capacity}人` : null].filter(Boolean).join(' · ') || description
+    }
+  }
+
+  const assetRes = await c.env.ASSETS.fetch(new URL('/liff.html', c.req.url))
+  let html = await assetRes.text()
+  html = html.replace(
+    '<title>活動報名</title>',
+    `<title>${escapeHtml(title)}</title>
+<meta property="og:title" content="${escapeHtml(title)}" />
+<meta property="og:description" content="${escapeHtml(description)}" />`
+  )
+  return c.html(html)
+})
+
+// ---- everything else: static assets ----
 app.get('*', (c) => c.env.ASSETS.fetch(c.req.raw))
 
 export default app
