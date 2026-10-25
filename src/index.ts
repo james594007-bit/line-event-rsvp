@@ -12,6 +12,7 @@ import { toPublicEvent, type EventRow } from './lib/public-event'
 import { runRetentionSweep } from './lib/retention'
 import { verifyPayload } from './lib/crypto'
 import { requireSameOrigin } from './middleware'
+import { eventIdFromSearch, eventPreviewDescription } from './lib/link-preview'
 
 // Synthetic moderator row (seeded in migrations/0003) that legacy,
 // passcode-gated events are attributed to, since the shared-passcode model
@@ -398,17 +399,23 @@ function escapeHtml(s: string) {
 }
 
 app.get('/liff', async (c) => {
-  const eventId = c.req.query('event')
+  const eventId = eventIdFromSearch(new URL(c.req.url).search)
   let title = '活動報名系統'
   let description = '點開看看目前報名人數,一起參加吧'
 
   if (eventId) {
-    const event = await c.env.DB.prepare('SELECT title, COALESCE(ends_at, event_date) AS event_date, capacity FROM events WHERE id = ?')
+    const event = await c.env.DB.prepare(
+      'SELECT title, COALESCE(ends_at, event_date) AS event_date, meeting_location, capacity FROM events WHERE id = ?'
+    )
       .bind(eventId)
       .first<any>()
     if (event) {
       title = event.title
-      description = [event.event_date, event.capacity ? `限${event.capacity}人` : null].filter(Boolean).join(' · ') || description
+      description = eventPreviewDescription({
+        eventDate: event.event_date,
+        meetingLocation: event.meeting_location,
+        capacity: event.capacity,
+      })
     }
   }
 
