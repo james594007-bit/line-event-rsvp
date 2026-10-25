@@ -116,7 +116,7 @@ async function loadEventList() {
         <div>
           <div>${escapeHtml(ev.title)} ${statusBadge}</div>
           <div class="meta">${escapeHtml(ev.ends_at ?? ev.event_date ?? '')} ${ev.capacity ? `· 上限${ev.capacity}人` : ''} · 截止 ${escapeHtml(ev.cutoff_at ?? '未設定')}</div>
-          <div class="headcount">${capLabel} 人報名 ${headcountExtra} · 查看名單 ▾</div>
+          <button type="button" class="headcount">${capLabel} 人報名 ${headcountExtra} · 查看名單 ▾</button>
         </div>
         <div style="display:flex; gap:10px;">
           <a class="edit" href="#" data-id="${ev.id}">編輯</a>
