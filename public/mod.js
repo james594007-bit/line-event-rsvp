@@ -17,13 +17,7 @@ async function modFetch(url, options = {}) {
   return res;
 }
 
-let liffId = '';
 let editingId = null;
-
-async function loadConfig() {
-  const res = await fetch('/api/config');
-  liffId = (await res.json()).liffId;
-}
 
 function getFormData() {
   return {
@@ -90,10 +84,9 @@ async function startEdit(id) {
 }
 
 function showLinks(id) {
-  const liffUrl = `https://liff.line.me/${liffId}?event=${id}`;
-  const directUrl = `${location.origin}/liff?event=${id}`;
+  const shareUrl = `${location.origin}/liff?event=${id}`;
   const box = document.getElementById('result');
-  box.innerHTML = `報名連結(分享到群組用):<br /><a href="${liffUrl}" target="_blank">${liffUrl}</a><br /><br />備用連結(預覽卡片較準,登入多一步):<br /><a href="${directUrl}" target="_blank">${directUrl}</a>`;
+  box.innerHTML = `報名連結（分享到 LINE 用）:<br /><a href="${shareUrl}" target="_blank">${shareUrl}</a>`;
   box.style.display = 'block';
 }
 
@@ -226,7 +219,6 @@ async function init() {
   }
 
   document.getElementById('dashboard').style.display = 'block';
-  await loadConfig();
   await loadEventList();
 
   document.getElementById('eventForm').onsubmit = async (e) => {
