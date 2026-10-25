@@ -196,9 +196,10 @@ async function init() {
   await loadEvent();
   await loadRoster();
 
-  const cfgRes = await fetch('/api/config');
-  const cfg = await cfgRes.json();
   try {
+    const cfgRes = await fetch('/api/config');
+    if (!cfgRes.ok) throw new Error('LINE 設定讀取失敗');
+    const cfg = await cfgRes.json();
     await liff.init({ liffId: cfg.liffId, withLoginOnExternalBrowser: true });
   } catch (e) {
     const message = String(e?.message ?? e);
