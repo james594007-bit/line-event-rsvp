@@ -11,6 +11,7 @@ import { CSRF_COOKIE_NAME, requireAuthenticated, requireSameOrigin } from '../mi
 
 const OAUTH_BUNDLE_COOKIE = 'line_oauth'
 export const VERIFIED_IDENTITY_COOKIE = 'verified_identity' // short-lived bridge: LINE-verified but not yet an applicant
+export const PARTICIPANT_IDENTITY_COOKIE = 'participant_identity'
 
 export const authRoutes = new Hono<{ Bindings: Bindings }>()
 
@@ -26,11 +27,16 @@ authRoutes.get('/auth/line/start', async (c) => {
   const state = generateState()
   const nonce = generateNonce()
   const pkce = await generatePkce()
+  const purpose = c.req.query('purpose') === 'participant' ? 'participant' : 'moderator'
+  const eventId = purpose === 'participant' ? c.req.query('event') : undefined
+  if (purpose === 'participant' && (!eventId || !/^ev_[A-Za-z0-9_-]+$/.test(eventId))) {
+    return c.text('報名連結缺少有效的活動編號', 400)
+  }
 
   // HMAC-signed and expiry-bound (not just JSON) — this cookie is round-tripped
   // through the user's browser for up to 10 minutes before the callback trusts
   // state/nonce/verifier out of it, so it must be tamper-evident, not just opaque.
-  const bundle = await signPayload(c.env.COOKIE_SIGNING_SECRET, { state, nonce, verifier: pkce.verifier }, 600)
+  const bundle = await signPayload(c.env.COOKIE_SIGNING_SECRET, { state, nonce, verifier: pkce.verifier, purpose, eventId }, 600)
   setCookie(c, OAUTH_BUNDLE_COOKIE, bundle, {
     httpOnly: true,
     secure: true,
@@ -53,7 +59,10 @@ authRoutes.get('/auth/line/callback', async (c) => {
 
   const bundleRaw = getCookie(c, OAUTH_BUNDLE_COOKIE)
   deleteCookie(c, OAUTH_BUNDLE_COOKIE, { path: '/' })
-  const bundle = await verifyPayload<{ state: string; nonce: string; verifier: string }>(c.env.COOKIE_SIGNING_SECRET, bundleRaw)
+  const bundle = await verifyPayload<{ state: string; nonce: string; verifier: string; purpose?: 'moderator' | 'participant'; eventId?: string }>(
+    c.env.COOKIE_SIGNING_SECRET,
+    bundleRaw
+  )
   if (!bundle) return c.text('登入逾時、重複送出或驗證失敗,請重新開始登入', 400)
 
   const returnedState = c.req.query('state')
@@ -77,6 +86,18 @@ authRoutes.get('/auth/line/callback', async (c) => {
     return c.text(`登入驗證失敗(${code})`, 400)
   }
 
+  if (bundle.purpose === 'participant' && bundle.eventId) {
+    const participantIdentity = await signPayload(c.env.COOKIE_SIGNING_SECRET, identity, 60 * 60 * 24 * 30)
+    setCookie(c, PARTICIPANT_IDENTITY_COOKIE, participantIdentity, {
+      httpOnly: true,
+      secure: true,
+      sameSite: 'Lax',
+      maxAge: 60 * 60 * 24 * 30,
+      path: '/',
+    })
+    return c.redirect(`/liff?event=${encodeURIComponent(bundle.eventId)}`, 302)
+  }
+
   await ensureOwnerBootstrap(c.env.DB, identity.lineUserId, c.env.OWNER_LINE_USER_ID)
   const moderator = await getModeratorByLineUserId(c.env.DB, identity.lineUserId)
 
@@ -97,6 +118,15 @@ authRoutes.get('/auth/line/callback', async (c) => {
   )
   setCookie(c, VERIFIED_IDENTITY_COOKIE, bridge, { httpOnly: true, secure: true, sameSite: 'Lax', path: '/', maxAge: 600 })
   return c.redirect('/mod-apply', 302)
+})
+
+authRoutes.get('/api/participant/me', async (c) => {
+  const identity = await verifyPayload<{ lineUserId: string; displayName?: string; pictureUrl?: string }>(
+    c.env.COOKIE_SIGNING_SECRET,
+    getCookie(c, PARTICIPANT_IDENTITY_COOKIE)
+  )
+  if (!identity) return c.json({ error: 'unauthorized' }, 401)
+  return c.json(identity)
 })
 
 authRoutes.post('/auth/logout', requireAuthenticated, requireSameOrigin, async (c) => {

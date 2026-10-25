@@ -3,6 +3,7 @@ import { describe, it, expect, beforeEach } from 'vitest'
 import { resetTestSchema } from '../setup'
 import { makeModeratorWithSession, authedRequest, ORIGIN } from '../helpers'
 import app from '../../src/index'
+import { signPayload } from '../../src/lib/crypto'
 
 async function call(req: Request) {
   return app.fetch(req, env)
@@ -246,5 +247,41 @@ describe('public event endpoint never leaks moderator_id or ends_at', () => {
     expect(body).not.toHaveProperty('moderator_id')
     expect(body).not.toHaveProperty('ends_at')
     expect(body.title).toBe('Public test')
+  })
+})
+
+describe('participant registration identity', () => {
+  beforeEach(async () => {
+    await resetTestSchema(env.DB)
+  })
+
+  it('requires a LINE-verified participant cookie and ignores spoofed identity fields', async () => {
+    const moderator = await makeModeratorWithSession(env.DB)
+    const createRes = await call(
+      authedRequest('/api/mod/events', moderator, { method: 'POST', body: JSON.stringify({ title: 'Secure signup', endsAt: '2026-12-01' }) })
+    )
+    const { id } = await createRes.json<{ id: string }>()
+
+    const unauthenticated = await call(
+      new Request(`${ORIGIN}/api/events/${id}/register`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Origin: ORIGIN },
+        body: JSON.stringify({ lineUserId: 'U_forged' }),
+      })
+    )
+    expect(unauthenticated.status).toBe(401)
+
+    const participant = await signPayload(env.COOKIE_SIGNING_SECRET, { lineUserId: 'U_verified', displayName: 'Verified' }, 600)
+    const authenticated = await call(
+      new Request(`${ORIGIN}/api/events/${id}/register`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Origin: ORIGIN, Cookie: `participant_identity=${participant}` },
+        body: JSON.stringify({ lineUserId: 'U_forged', displayName: 'Forged' }),
+      })
+    )
+    expect(authenticated.status).toBe(200)
+
+    const row = await env.DB.prepare('SELECT line_user_id, display_name FROM registrations WHERE event_id = ?').bind(id).first<any>()
+    expect(row).toEqual({ line_user_id: 'U_verified', display_name: 'Verified' })
   })
 })

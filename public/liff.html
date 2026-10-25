@@ -81,7 +81,6 @@
 
   <ul id="roster"></ul>
 
-<script src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script>
 <script>
 const params = new URLSearchParams(location.search);
 const liffState = params.get('liff.state') ?? '';
@@ -154,7 +153,7 @@ async function loadRoster() {
 }
 
 async function register() {
-  const payload = { lineUserId: profile.userId, displayName: profile.displayName, pictureUrl: profile.pictureUrl };
+  const payload = {};
   if (eventData.enable_car_role) payload.role = document.querySelector('input[name=role]:checked').value;
   if (eventData.enable_attendance_type) payload.attendanceType = document.querySelector('input[name=attendanceType]:checked').value;
   if (eventData.enable_plus_one) payload.plusOneCount = plusOneCount;
@@ -176,7 +175,7 @@ async function cancel() {
   await fetch(`/api/events/${eventId}/cancel`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ lineUserId: profile.userId }),
+    body: JSON.stringify({}),
   });
   document.getElementById('groupLinkBox').style.display = 'none';
   await loadRoster();
@@ -193,29 +192,19 @@ async function init() {
     document.getElementById('plusOneValue').textContent = plusOneCount;
   };
 
-  // Event information should remain visible even when an external browser or
-  // content blocker prevents the LINE SDK from reaching LINE's login service.
   await loadEvent();
   await loadRoster();
 
-  try {
-    const cfgRes = await fetch('/api/config');
-    if (!cfgRes.ok) throw new Error('LINE 設定讀取失敗');
-    const cfg = await cfgRes.json();
-    await liff.init({ liffId: cfg.liffId, withLoginOnExternalBrowser: true });
-    if (!liff.isLoggedIn() && !liff.isInClient()) { liff.login({ redirectUri: location.href }); return; }
-    profile = await liff.getProfile();
-  } catch (e) {
-    const message = String(e?.message ?? e);
-    showStatus(message.includes('Failed to fetch')
-      ? '活動資料已載入，但這個瀏覽器擋住了 LINE 登入服務。請把報名連結貼到 LINE 對話中，再從 LINE 開啟。'
-      : `LINE 登入暫時無法使用：${message}`);
-    return;
-  }
-  document.getElementById('joinBtn').onclick = register;
-  document.getElementById('cancelBtn').onclick = cancel;
+  const meRes = await fetch('/api/participant/me');
+  if (meRes.ok) profile = await meRes.json();
+  const startLineLogin = () => {
+    location.href = `/auth/line/start?purpose=participant&event=${encodeURIComponent(eventId)}`;
+  };
+  document.getElementById('joinBtn').onclick = profile ? register : startLineLogin;
+  document.getElementById('cancelBtn').onclick = profile ? cancel : startLineLogin;
   document.getElementById('joinBtn').disabled = false;
   document.getElementById('cancelBtn').disabled = false;
+  if (!profile) showStatus('按下「我要參加」後，會先進行 LINE 登入，再自動回到這個活動。');
 }
 
 init().catch((e) => showStatus('頁面載入失敗：' + e.message));

@@ -1,14 +1,17 @@
 import { Hono } from 'hono'
+import { getCookie } from 'hono/cookie'
 // @line/bot-sdk pulls in axios, which chokes the Workers bundler/test runtime
 // unless it's only loaded lazily where actually used (push messaging, still
 // unused/dormant in this project — see invite-link handler below).
 import type { Bindings } from './bindings'
-import { authRoutes } from './routes/auth'
+import { authRoutes, PARTICIPANT_IDENTITY_COOKIE } from './routes/auth'
 import { modRoutes } from './routes/mod'
 import { ownerRoutes } from './routes/owner'
 import { isValidIsoDate } from './lib/event-ownership'
 import { toPublicEvent, type EventRow } from './lib/public-event'
 import { runRetentionSweep } from './lib/retention'
+import { verifyPayload } from './lib/crypto'
+import { requireSameOrigin } from './middleware'
 
 // Synthetic moderator row (seeded in migrations/0003) that legacy,
 // passcode-gated events are attributed to, since the shared-passcode model
@@ -257,18 +260,19 @@ app.get('/api/events/:id/roster', async (c) => {
 })
 
 // ---- register / cancel (dedup on event_id + line_user_id) ----
-app.post('/api/events/:id/register', async (c) => {
+app.post('/api/events/:id/register', requireSameOrigin, async (c) => {
   const id = c.req.param('id')
   const body = await c.req.json<{
-    lineUserId: string
-    displayName?: string
-    pictureUrl?: string
     hide?: boolean
     role?: 'driver' | 'passenger'
     attendanceType?: 'activity_only' | 'activity_and_meal' | 'meal_only'
     plusOneCount?: number
   }>()
-  if (!body.lineUserId) return c.json({ error: 'lineUserId required' }, 400)
+  const identity = await verifyPayload<{ lineUserId: string; displayName?: string; pictureUrl?: string }>(
+    c.env.COOKIE_SIGNING_SECRET,
+    getCookie(c, PARTICIPANT_IDENTITY_COOKIE)
+  )
+  if (!identity) return c.json({ error: 'unauthorized' }, 401)
   const plusOneCount = Math.max(0, Math.floor(body.plusOneCount ?? 0))
 
   const event = await c.env.DB.prepare('SELECT * FROM events WHERE id = ?').bind(id).first<any>()
@@ -281,7 +285,7 @@ app.post('/api/events/:id/register', async (c) => {
       `SELECT COALESCE(SUM(1 + plus_one_count), 0) as n FROM registrations
        WHERE event_id = ? AND status = 'registered' AND line_user_id != ?`
     )
-      .bind(id, body.lineUserId)
+      .bind(id, identity.lineUserId)
       .first<{ n: number }>()
     const thisHeadcount = 1 + plusOneCount
     if ((others?.n ?? 0) + thisHeadcount > event.capacity) {
@@ -302,9 +306,9 @@ app.post('/api/events/:id/register', async (c) => {
   )
     .bind(
       id,
-      body.lineUserId,
-      body.displayName ?? null,
-      body.pictureUrl ?? null,
+      identity.lineUserId,
+      identity.displayName ?? null,
+      identity.pictureUrl ?? null,
       body.role ?? null,
       body.attendanceType ?? null,
       plusOneCount,
@@ -315,15 +319,15 @@ app.post('/api/events/:id/register', async (c) => {
   return c.json({ ok: true })
 })
 
-app.post('/api/events/:id/cancel', async (c) => {
+app.post('/api/events/:id/cancel', requireSameOrigin, async (c) => {
   const id = c.req.param('id')
-  const body = await c.req.json<{ lineUserId: string }>()
-  if (!body.lineUserId) return c.json({ error: 'lineUserId required' }, 400)
+  const identity = await verifyPayload<{ lineUserId: string }>(c.env.COOKIE_SIGNING_SECRET, getCookie(c, PARTICIPANT_IDENTITY_COOKIE))
+  if (!identity) return c.json({ error: 'unauthorized' }, 401)
   await c.env.DB.prepare(
     `UPDATE registrations SET status = 'cancelled', updated_at = datetime('now')
      WHERE event_id = ? AND line_user_id = ?`
   )
-    .bind(id, body.lineUserId)
+    .bind(id, identity.lineUserId)
     .run()
   return c.json({ ok: true })
 })

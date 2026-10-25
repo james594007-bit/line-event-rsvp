@@ -102,8 +102,8 @@ describe('/auth/line/callback — happy path with a valid signed cookie (LINE ne
     globalThis.fetch = originalFetch
   })
 
-  async function startAndGetBundle() {
-    const startRes = await call(new Request(`${ORIGIN}/auth/line/start`))
+  async function startAndGetBundle(path = '/auth/line/start') {
+    const startRes = await call(new Request(`${ORIGIN}${path}`))
     const location = new URL(startRes.headers.get('location')!)
     const cookieVal = extractCookieValue(startRes.headers.get('set-cookie'), 'line_oauth')!
     return { state: location.searchParams.get('state')!, nonce: location.searchParams.get('nonce')!, cookieVal }
@@ -165,6 +165,20 @@ describe('/auth/line/callback — happy path with a valid signed cookie (LINE ne
     expect(res.status).toBe(302)
     expect(res.headers.get('location')).toBe('/mod')
     expect(res.headers.get('set-cookie')).toContain('mod_session=')
+  })
+
+  it('a participant login returns to the same event with a verified participant cookie', async () => {
+    const { state, nonce, cookieVal } = await startAndGetBundle('/auth/line/start?purpose=participant&event=ev_test123')
+    mockLineNetwork(nonce, 'U_participant')
+
+    const res = await call(
+      new Request(`${ORIGIN}/auth/line/callback?state=${state}&code=anycode`, { headers: { Cookie: `line_oauth=${cookieVal}` }, redirect: 'manual' })
+    )
+
+    expect(res.status).toBe(302)
+    expect(res.headers.get('location')).toBe('/liff?event=ev_test123')
+    expect(res.headers.get('set-cookie')).toContain('participant_identity=')
+    expect(res.headers.get('set-cookie')).not.toContain('mod_session=')
   })
 
   it('rejects when the nonce LINE hands back does not match what was sent (replay protection still enforced end-to-end)', async () => {

@@ -3,6 +3,7 @@ import { describe, it, expect, beforeEach } from 'vitest'
 import { resetTestSchema } from '../setup'
 import { makeModeratorWithSession, authedRequest, ORIGIN } from '../helpers'
 import app from '../../src/index'
+import { signPayload } from '../../src/lib/crypto'
 
 async function call(req: Request) {
   return app.fetch(req, env)
@@ -52,11 +53,12 @@ describe('legacy passcode system cannot cross into moderator-owned events', () =
 
   it("the legacy passcode cannot delete a moderator's event, and does not touch its registrations either", async () => {
     // register someone for the moderator's event via the public participant endpoint
+    const participant = await signPayload(env.COOKIE_SIGNING_SECRET, { lineUserId: 'U_participant', displayName: 'Someone' }, 600)
     const regRes = await call(
       new Request(`${ORIGIN}/api/events/${moderatorEventId}/register`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ lineUserId: 'U_participant', displayName: 'Someone' }),
+        headers: { 'Content-Type': 'application/json', Cookie: `participant_identity=${participant}`, Origin: ORIGIN },
+        body: JSON.stringify({}),
       })
     )
     expect(regRes.status).toBe(200)
