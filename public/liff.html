@@ -84,7 +84,9 @@
 <script src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script>
 <script>
 const params = new URLSearchParams(location.search);
-const eventId = params.get('event');
+const liffState = params.get('liff.state') ?? '';
+const stateQuery = liffState.includes('?') ? liffState.slice(liffState.indexOf('?') + 1) : liffState;
+const eventId = params.get('event') || new URLSearchParams(stateQuery).get('event');
 let profile = null;
 let eventData = null;
 let plusOneCount = 0;
