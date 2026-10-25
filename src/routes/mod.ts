@@ -73,6 +73,7 @@ interface EventBody {
   title?: string
   organizer?: string
   endsAt?: string
+  activityLocation?: string
   meetingLocation?: string
   meetingTime?: string
   fee?: string
@@ -96,9 +97,9 @@ modRoutes.post('/api/mod/events', requireAuthenticated, requireApproved, require
   const id = randomId('ev')
   await c.env.DB.prepare(
     `INSERT INTO events
-      (id, moderator_id, title, organizer, event_date, ends_at, meeting_location, meeting_time, fee, passenger_fee,
+      (id, moderator_id, title, organizer, event_date, ends_at, activity_location, meeting_location, meeting_time, fee, passenger_fee,
        capacity, cutoff_at, group_link, notes, enable_attendance_type, enable_car_role, enable_plus_one)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
   )
     .bind(
       id,
@@ -107,6 +108,7 @@ modRoutes.post('/api/mod/events', requireAuthenticated, requireApproved, require
       body.organizer ?? null,
       body.endsAt,
       body.endsAt,
+      body.activityLocation ?? null,
       body.meetingLocation ?? null,
       body.meetingTime ?? null,
       body.fee ?? null,
@@ -142,7 +144,7 @@ modRoutes.put('/api/mod/events/:id', requireAuthenticated, requireApproved, requ
 
   await c.env.DB.prepare(
     `UPDATE events SET
-      title = ?, organizer = ?, event_date = ?, ends_at = ?, meeting_location = ?, meeting_time = ?,
+      title = ?, organizer = ?, event_date = ?, ends_at = ?, activity_location = ?, meeting_location = ?, meeting_time = ?,
       fee = ?, passenger_fee = ?, capacity = ?, cutoff_at = ?, group_link = ?, notes = ?, status = ?,
       enable_attendance_type = ?, enable_car_role = ?, enable_plus_one = ?
      WHERE id = ? AND moderator_id = ?` // moderator_id repeated in WHERE, not just relying on the earlier getOwnedEvent check
@@ -152,6 +154,7 @@ modRoutes.put('/api/mod/events/:id', requireAuthenticated, requireApproved, requ
       body.organizer ?? null,
       body.endsAt,
       body.endsAt,
+      body.activityLocation ?? null,
       body.meetingLocation ?? null,
       body.meetingTime ?? null,
       body.fee ?? null,

@@ -79,14 +79,19 @@ describe('event CRUD scoped to the authenticated moderator', () => {
     const res = await call(
       authedRequest('/api/mod/events', a, {
         method: 'POST',
-        body: JSON.stringify({ title: 'One date', endsAt: '2026-12-02', eventDate: 'legacy display text' }),
+        body: JSON.stringify({
+          title: 'One date',
+          endsAt: '2026-12-02',
+          eventDate: 'legacy display text',
+          activityLocation: '青年公園',
+        }),
       })
     )
     const { id } = await res.json<{ id: string }>()
-    const row = await env.DB.prepare('SELECT event_date, ends_at FROM events WHERE id = ?')
+    const row = await env.DB.prepare('SELECT event_date, ends_at, activity_location FROM events WHERE id = ?')
       .bind(id)
-      .first<{ event_date: string; ends_at: string }>()
-    expect(row).toEqual({ event_date: '2026-12-02', ends_at: '2026-12-02' })
+      .first<{ event_date: string; ends_at: string; activity_location: string }>()
+    expect(row).toEqual({ event_date: '2026-12-02', ends_at: '2026-12-02', activity_location: '青年公園' })
   })
 
   it('rejects event creation without a valid ISO endsAt', async () => {

@@ -30,6 +30,7 @@ function getFormData() {
     title: document.getElementById('f_title').value.trim(),
     organizer: document.getElementById('f_organizer').value.trim() || undefined,
     endsAt: document.getElementById('f_endsAt').value,
+    activityLocation: document.getElementById('f_activityLocation').value.trim() || undefined,
     meetingLocation: document.getElementById('f_meetingLocation').value.trim() || undefined,
     meetingTime: document.getElementById('f_meetingTime').value.trim() || undefined,
     fee: document.getElementById('f_fee').value.trim() || undefined,
@@ -49,6 +50,7 @@ function fillForm(ev) {
   document.getElementById('f_title').value = ev.title ?? '';
   document.getElementById('f_organizer').value = ev.organizer ?? '';
   document.getElementById('f_endsAt').value = ev.ends_at ?? '';
+  document.getElementById('f_activityLocation').value = ev.activity_location ?? '';
   document.getElementById('f_meetingLocation').value = ev.meeting_location ?? '';
   document.getElementById('f_meetingTime').value = ev.meeting_time ?? '';
   document.getElementById('f_fee').value = ev.fee ?? '';

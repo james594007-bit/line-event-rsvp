@@ -5,6 +5,7 @@ export interface OwnedEventRow {
   organizer: string | null
   event_date: string | null
   ends_at: string
+  activity_location: string | null
   meeting_location: string | null
   meeting_time: string | null
   fee: string | null

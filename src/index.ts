@@ -405,7 +405,9 @@ app.get('/liff', async (c) => {
 
   if (eventId) {
     const event = await c.env.DB.prepare(
-      'SELECT title, COALESCE(ends_at, event_date) AS event_date, meeting_location, capacity FROM events WHERE id = ?'
+      `SELECT title, COALESCE(ends_at, event_date) AS event_date,
+              COALESCE(activity_location, meeting_location) AS activity_location, capacity
+       FROM events WHERE id = ?`
     )
       .bind(eventId)
       .first<any>()
@@ -413,7 +415,7 @@ app.get('/liff', async (c) => {
       title = event.title
       description = eventPreviewDescription({
         eventDate: event.event_date,
-        meetingLocation: event.meeting_location,
+        meetingLocation: event.activity_location,
         capacity: event.capacity,
       })
     }

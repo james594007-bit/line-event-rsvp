@@ -51,6 +51,7 @@ const STATEMENTS = [
     organizer TEXT,
     event_date TEXT,
     ends_at TEXT NOT NULL,
+    activity_location TEXT,
     meeting_location TEXT,
     meeting_time TEXT,
     fee TEXT,

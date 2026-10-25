@@ -103,6 +103,7 @@ async function loadEvent() {
   const info = [
     row('主揪', eventData.organizer),
     row('日期', eventData.event_date),
+    row('活動地點', eventData.activity_location),
     row('集合', [eventData.meeting_location, eventData.meeting_time].filter(Boolean).join(' / ')),
     row('費用', eventData.fee),
     row('乘客車資', eventData.passenger_fee),

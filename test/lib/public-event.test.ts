@@ -10,6 +10,7 @@ describe('toPublicEvent', () => {
       organizer: 'James',
       event_date: '10/29',
       ends_at: '2026-10-29',
+      activity_location: '青年公園',
       meeting_location: 'somewhere',
       meeting_time: '08:00',
       fee: 'free',
@@ -35,6 +36,7 @@ describe('toPublicEvent', () => {
     expect(pub.id).toBe('ev_1')
     expect(pub.title).toBe('Test')
     expect(pub.event_date).toBe('2026-10-29')
+    expect(pub.activity_location).toBe('青年公園')
     expect(pub.enable_car_role).toBe(1)
   })
 })

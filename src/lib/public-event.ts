@@ -11,6 +11,7 @@ export interface EventRow {
   organizer: string | null
   event_date: string | null
   ends_at?: string | null
+  activity_location: string | null
   meeting_location: string | null
   meeting_time: string | null
   fee: string | null
@@ -34,6 +35,7 @@ export function toPublicEvent(row: EventRow) {
     // The product has one activity date. Keep the public response key stable
     // for older clients while sourcing it from the canonical ISO date.
     event_date: row.ends_at ?? row.event_date,
+    activity_location: row.activity_location ?? row.meeting_location,
     meeting_location: row.meeting_location,
     meeting_time: row.meeting_time,
     fee: row.fee,
