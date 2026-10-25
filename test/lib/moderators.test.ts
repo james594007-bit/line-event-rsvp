@@ -132,6 +132,81 @@ describe('moderator application + decisions', () => {
       .all<{ event_type: string }>()
     expect(rows.results.map((r) => r.event_type)).toEqual(['apply', 'approve', 'suspend', 'restore'])
   })
+
+  describe('batch atomicity: a failure on the last statement rolls back the earlier ones', () => {
+    // Each decision's batch ends with the audit_log INSERT. Dropping that
+    // table makes exactly that last statement fail, so a *passing* test
+    // here only proves anything if the earlier statement(s) are confirmed
+    // NOT to have taken effect — if D1's batch didn't roll back, the status
+    // change would still show up even though the whole call threw.
+
+    it('approve: a failing batch leaves the applicant still pending, not approved', async () => {
+      const applied = await applyAsModerator(env.DB, 'U_rollback_approve')
+      const owner = await applyAsModerator(env.DB, 'U_owner_rollback_approve')
+      await env.DB.prepare('DROP TABLE audit_log').run()
+
+      await expect(approveModerator(env.DB, owner.moderatorId, applied.moderatorId)).rejects.toThrow()
+
+      const mod = await env.DB.prepare('SELECT status, decided_at FROM moderators WHERE id = ?').bind(applied.moderatorId).first<{ status: string; decided_at: string | null }>()
+      expect(mod?.status).toBe('pending') // not 'approved' — the UPDATE did not commit
+      expect(mod?.decided_at).toBeNull()
+    })
+
+    it('reject: a failing batch leaves the applicant still pending, not rejected', async () => {
+      const applied = await applyAsModerator(env.DB, 'U_rollback_reject')
+      const owner = await applyAsModerator(env.DB, 'U_owner_rollback_reject')
+      await env.DB.prepare('DROP TABLE audit_log').run()
+
+      await expect(rejectModerator(env.DB, owner.moderatorId, applied.moderatorId)).rejects.toThrow()
+
+      const mod = await env.DB.prepare('SELECT status FROM moderators WHERE id = ?').bind(applied.moderatorId).first<{ status: string }>()
+      expect(mod?.status).toBe('pending')
+    })
+
+    it('restore: a failing batch leaves the moderator still suspended, not approved', async () => {
+      const applied = await applyAsModerator(env.DB, 'U_rollback_restore')
+      const owner = await applyAsModerator(env.DB, 'U_owner_rollback_restore')
+      await approveModerator(env.DB, owner.moderatorId, applied.moderatorId)
+      await suspendModerator(env.DB, owner.moderatorId, applied.moderatorId, null)
+      await env.DB.prepare('DROP TABLE audit_log').run()
+
+      await expect(restoreModerator(env.DB, owner.moderatorId, applied.moderatorId)).rejects.toThrow()
+
+      const mod = await env.DB.prepare('SELECT status FROM moderators WHERE id = ?').bind(applied.moderatorId).first<{ status: string }>()
+      expect(mod?.status).toBe('suspended') // not 'approved' — restore did not commit
+    })
+
+    it('suspend: a failing batch leaves status/events/session_version/sessions all untouched', async () => {
+      const applied = await applyAsModerator(env.DB, 'U_rollback_suspend')
+      const owner = await applyAsModerator(env.DB, 'U_owner_rollback_suspend')
+      await approveModerator(env.DB, owner.moderatorId, applied.moderatorId)
+
+      await env.DB
+        .prepare(`INSERT INTO events (id, moderator_id, title, ends_at, status) VALUES ('ev_rollback', ?, 'Rollback test event', '2099-01-01', 'open')`)
+        .bind(applied.moderatorId)
+        .run()
+      const { token } = await createSession(env.DB, applied.moderatorId, 0)
+
+      await env.DB.prepare('DROP TABLE audit_log').run()
+
+      await expect(suspendModerator(env.DB, owner.moderatorId, applied.moderatorId, 'should not stick')).rejects.toThrow()
+
+      const mod = await env.DB
+        .prepare('SELECT status, session_version, suspend_reason FROM moderators WHERE id = ?')
+        .bind(applied.moderatorId)
+        .first<{ status: string; session_version: number; suspend_reason: string | null }>()
+      expect(mod?.status).toBe('approved') // not 'suspended'
+      expect(mod?.session_version).toBe(0) // not bumped
+      expect(mod?.suspend_reason).toBeNull() // not set
+
+      const event = await env.DB.prepare('SELECT status FROM events WHERE id = ?').bind('ev_rollback').first<{ status: string }>()
+      expect(event?.status).toBe('open') // not 'closed'
+
+      // the session the moderator already held must still resolve — the
+      // DELETE FROM sessions in that same batch must not have committed
+      expect(await resolveSession(env.DB, token)).not.toBeNull()
+    })
+  })
 })
 
 describe('owner bootstrap', () => {
