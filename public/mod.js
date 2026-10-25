@@ -121,8 +121,8 @@ async function loadEventList() {
     li.innerHTML = `
       <div class="row">
         <div>
-          <div>${ev.title} ${statusBadge}</div>
-          <div class="meta">${ev.event_date ?? ''} ${ev.capacity ? `· 上限${ev.capacity}人` : ''} · 截止 ${ev.cutoff_at ?? '未設定'}</div>
+          <div>${escapeHtml(ev.title)} ${statusBadge}</div>
+          <div class="meta">${escapeHtml(ev.event_date ?? '')} ${ev.capacity ? `· 上限${ev.capacity}人` : ''} · 截止 ${escapeHtml(ev.cutoff_at ?? '未設定')}</div>
           <div class="headcount">${capLabel} 人報名 ${headcountExtra} · 查看名單 ▾</div>
         </div>
         <div style="display:flex; gap:10px;">
@@ -164,12 +164,14 @@ async function toggleRoster(id, li) {
 
   const listEl = box.querySelector('.roster-registered');
   listEl.innerHTML = data.roster.length
-    ? data.roster.map((r) => `<li>${r.displayName ?? '(隱藏姓名)'} ${rosterEntryTags(r).map((t) => `<span class="tag">${t}</span>`).join('')}</li>`).join('')
+    ? data.roster
+        .map((r) => `<li>${escapeHtml(r.displayName ?? '(隱藏姓名)')} ${rosterEntryTags(r).map((t) => `<span class="tag">${t}</span>`).join('')}</li>`)
+        .join('')
     : '<li style="color:#aaa">還沒有人報名</li>';
 
   const cancelledEl = box.querySelector('.roster-cancelled');
   cancelledEl.innerHTML = data.cancelledRoster.length
-    ? `<div class="meta" style="margin-top:6px;">已取消:${data.cancelledRoster.map((r) => r.displayName ?? '(隱藏姓名)').join('、')}</div>`
+    ? `<div class="meta" style="margin-top:6px;">已取消:${data.cancelledRoster.map((r) => escapeHtml(r.displayName ?? '(隱藏姓名)')).join('、')}</div>`
     : '';
 
   box.querySelector('.copy-roster').onclick = () => {

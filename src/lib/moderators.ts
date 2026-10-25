@@ -1,4 +1,3 @@
-import { invalidateAllSessions } from './session'
 import type { ModeratorRow } from './session'
 
 function randomId(prefix: string) {
@@ -79,11 +78,18 @@ export async function approveModerator(db: D1Database, actorId: string, targetId
     return { ok: false, reason: 'wrong_state' }
   }
 
-  await db
-    .prepare(`UPDATE moderators SET status = 'approved', decided_at = datetime('now'), decided_by = ?, pending_display_name = NULL WHERE id = ?`)
-    .bind(actorId, targetId)
-    .run()
-  await writeAudit(db, { eventType: 'approve', targetModeratorId: targetId, actorModeratorId: actorId, result: 'success' })
+  // status update + audit entry as one D1 batch (runs as a single
+  // transaction — if either statement fails, neither applies), instead of
+  // two independent .run() calls that could leave status changed with no
+  // matching audit row, or vice versa, if one failed and the other didn't.
+  await db.batch([
+    db
+      .prepare(`UPDATE moderators SET status = 'approved', decided_at = datetime('now'), decided_by = ?, pending_display_name = NULL WHERE id = ?`)
+      .bind(actorId, targetId),
+    db
+      .prepare('INSERT INTO audit_log (event_type, target_moderator_id, actor_moderator_id, result) VALUES (?, ?, ?, ?)')
+      .bind('approve', targetId, actorId, 'success'),
+  ])
   return { ok: true }
 }
 
@@ -96,11 +102,14 @@ export async function rejectModerator(db: D1Database, actorId: string, targetId:
     return { ok: false, reason: 'wrong_state' }
   }
 
-  await db
-    .prepare(`UPDATE moderators SET status = 'rejected', decided_at = datetime('now'), decided_by = ?, pending_display_name = NULL WHERE id = ?`)
-    .bind(actorId, targetId)
-    .run()
-  await writeAudit(db, { eventType: 'reject', targetModeratorId: targetId, actorModeratorId: actorId, result: 'success' })
+  await db.batch([
+    db
+      .prepare(`UPDATE moderators SET status = 'rejected', decided_at = datetime('now'), decided_by = ?, pending_display_name = NULL WHERE id = ?`)
+      .bind(actorId, targetId),
+    db
+      .prepare('INSERT INTO audit_log (event_type, target_moderator_id, actor_moderator_id, result) VALUES (?, ?, ?, ?)')
+      .bind('reject', targetId, actorId, 'success'),
+  ])
   return { ok: true }
 }
 
@@ -121,10 +130,22 @@ export async function suspendModerator(db: D1Database, actorId: string, targetId
     return { ok: false, reason: 'wrong_state' }
   }
 
-  await db.prepare(`UPDATE moderators SET status = 'suspended', suspend_reason = ?, decided_at = datetime('now'), decided_by = ? WHERE id = ?`).bind(reason, actorId, targetId).run()
-  await db.prepare(`UPDATE events SET status = 'closed' WHERE moderator_id = ? AND status = 'open'`).bind(targetId).run()
-  await invalidateAllSessions(db, targetId)
-  await writeAudit(db, { eventType: 'suspend', targetModeratorId: targetId, actorModeratorId: actorId, result: 'success' })
+  // Status change, closing their open events, invalidating every existing
+  // session (inlined here rather than calling invalidateAllSessions, so the
+  // bump + delete join the same batch/transaction), and the audit entry —
+  // five statements, one batch, so a partial failure can't leave e.g. the
+  // moderator marked suspended while their sessions are still valid.
+  await db.batch([
+    db
+      .prepare(`UPDATE moderators SET status = 'suspended', suspend_reason = ?, decided_at = datetime('now'), decided_by = ? WHERE id = ?`)
+      .bind(reason, actorId, targetId),
+    db.prepare(`UPDATE events SET status = 'closed' WHERE moderator_id = ? AND status = 'open'`).bind(targetId),
+    db.prepare('UPDATE moderators SET session_version = session_version + 1 WHERE id = ?').bind(targetId),
+    db.prepare('DELETE FROM sessions WHERE moderator_id = ?').bind(targetId),
+    db
+      .prepare('INSERT INTO audit_log (event_type, target_moderator_id, actor_moderator_id, result) VALUES (?, ?, ?, ?)')
+      .bind('suspend', targetId, actorId, 'success'),
+  ])
   return { ok: true }
 }
 
@@ -138,8 +159,12 @@ export async function restoreModerator(db: D1Database, actorId: string, targetId
     return { ok: false, reason: 'wrong_state' }
   }
 
-  await db.prepare(`UPDATE moderators SET status = 'approved', decided_at = datetime('now'), decided_by = ? WHERE id = ?`).bind(actorId, targetId).run()
-  await writeAudit(db, { eventType: 'restore', targetModeratorId: targetId, actorModeratorId: actorId, result: 'success' })
+  await db.batch([
+    db.prepare(`UPDATE moderators SET status = 'approved', decided_at = datetime('now'), decided_by = ? WHERE id = ?`).bind(actorId, targetId),
+    db
+      .prepare('INSERT INTO audit_log (event_type, target_moderator_id, actor_moderator_id, result) VALUES (?, ?, ?, ?)')
+      .bind('restore', targetId, actorId, 'success'),
+  ])
   return { ok: true }
 }
 

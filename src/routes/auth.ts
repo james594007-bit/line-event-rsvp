@@ -6,7 +6,7 @@ import { buildAuthorizeUrl, exchangeCodeForIdToken, verifyIdToken, LineAuthError
 import { createSession, SESSION_COOKIE_NAME, revokeSession } from '../lib/session'
 import { ensureOwnerBootstrap, getModeratorByLineUserId } from '../lib/moderators'
 import { checkRateLimit } from '../lib/ratelimit'
-import { signPayload, randomToken } from '../lib/crypto'
+import { signPayload, verifyPayload, randomToken } from '../lib/crypto'
 import { CSRF_COOKIE_NAME, requireAuthenticated, requireSameOrigin } from '../middleware'
 
 const OAUTH_BUNDLE_COOKIE = 'line_oauth'
@@ -27,7 +27,10 @@ authRoutes.get('/auth/line/start', async (c) => {
   const nonce = generateNonce()
   const pkce = await generatePkce()
 
-  const bundle = JSON.stringify({ state, nonce, verifier: pkce.verifier })
+  // HMAC-signed and expiry-bound (not just JSON) — this cookie is round-tripped
+  // through the user's browser for up to 10 minutes before the callback trusts
+  // state/nonce/verifier out of it, so it must be tamper-evident, not just opaque.
+  const bundle = await signPayload(c.env.COOKIE_SIGNING_SECRET, { state, nonce, verifier: pkce.verifier }, 600)
   setCookie(c, OAUTH_BUNDLE_COOKIE, bundle, {
     httpOnly: true,
     secure: true,
@@ -50,14 +53,8 @@ authRoutes.get('/auth/line/callback', async (c) => {
 
   const bundleRaw = getCookie(c, OAUTH_BUNDLE_COOKIE)
   deleteCookie(c, OAUTH_BUNDLE_COOKIE, { path: '/' })
-  if (!bundleRaw) return c.text('登入逾時或重複送出,請重新開始登入', 400)
-
-  let bundle: { state: string; nonce: string; verifier: string }
-  try {
-    bundle = JSON.parse(bundleRaw)
-  } catch {
-    return c.text('登入狀態毀損,請重新開始登入', 400)
-  }
+  const bundle = await verifyPayload<{ state: string; nonce: string; verifier: string }>(c.env.COOKIE_SIGNING_SECRET, bundleRaw)
+  if (!bundle) return c.text('登入逾時、重複送出或驗證失敗,請重新開始登入', 400)
 
   const returnedState = c.req.query('state')
   const code = c.req.query('code')

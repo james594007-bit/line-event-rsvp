@@ -12,8 +12,12 @@ async function refreshStatus() {
   const res = await fetch('/api/mod/me');
   if (!res.ok) return null;
   const data = await res.json();
-  show('communityName', data.communityName);
-  show('statusBox', `<div class="status ${data.status}">${statusLabel[data.status]} — ${statusExplain[data.status]}</div>`);
+  // communityName is a fixed server-side constant and status is a closed
+  // enum (DB CHECK constraint), so neither is attacker-controlled today —
+  // escaped anyway for consistency with mod.js/owner.js and so this stays
+  // safe if either ever starts carrying freer-form data.
+  show('communityName', escapeHtml(data.communityName));
+  show('statusBox', `<div class="status ${escapeHtml(data.status)}">${escapeHtml(statusLabel[data.status])} — ${escapeHtml(statusExplain[data.status])}</div>`);
 
   const btn = document.getElementById('actionBtn');
   if (data.status === 'approved') {

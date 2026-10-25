@@ -15,7 +15,7 @@ async function ownerFetch(url, options = {}) {
 }
 
 function row(mod, actionsHtml) {
-  const label = mod.pending_display_name ? `${mod.pending_display_name}(${mod.id})` : mod.id;
+  const label = mod.pending_display_name ? `${escapeHtml(mod.pending_display_name)}(${mod.id})` : mod.id;
   return `<div class="row-item">
     <div>
       <div>${label} ${mod.role === 'owner' ? '<span class="meta">擁有者</span>' : ''}</div>

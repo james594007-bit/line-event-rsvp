@@ -1,12 +1,21 @@
--- Owner/moderator access control: accounts, sessions, audit log, rate limiting,
--- and an events rebuild that makes moderator_id and ends_at mandatory.
+-- Owner/moderator access control: accounts, sessions, audit log, rate
+-- limiting, and event ownership — NON-DESTRUCTIVE preparation only.
 --
--- IMPORTANT: this migration intentionally does NOT carry forward existing rows
--- in `events` / `registrations`. All current data is test data (see
--- docs/OWNER-ACCESS-PRD.md section 2) with no moderator owner, so it cannot
--- satisfy the new NOT NULL moderator_id constraint. The documented cutover
--- procedure (stage 5) backs up and clears that data BEFORE this migration
--- runs against the production database. Local/test runs should do the same.
+-- This migration does NOT drop, rename, or rebuild `events` or
+-- `registrations`, and does not delete any existing row. It only adds new
+-- tables (purely additive) and two new NULLABLE columns on `events`
+-- (moderator_id, ends_at), then backfills existing events to the synthetic
+-- LEGACY_MODERATOR_ID so they stay reachable through the still-live
+-- passcode-gated admin endpoints — an additive UPDATE, not data loss.
+--
+-- Promoting moderator_id/ends_at to NOT NULL (the final target shape — see
+-- test/setup.ts, which already reflects it, since tests describe the end
+-- state) requires a table rebuild in SQLite, which IS a real, if normally
+-- safe, destructive-shaped operation. That step lives in
+-- ops/finalize-owner-access-not-null.sql instead, deliberately NOT in this
+-- migrations/ directory, so `wrangler d1 migrations apply` can never run it
+-- automatically. It must be run manually, only after a backup, and only
+-- after James has explicitly confirmed — see ops/README.md.
 
 CREATE TABLE moderators (
   id TEXT PRIMARY KEY,
@@ -73,57 +82,6 @@ CREATE TABLE rate_limit_counters (
   count INTEGER NOT NULL DEFAULT 0
 );
 
--- ---- events rebuild: add moderator_id (NOT NULL) and ends_at (NOT NULL, ISO date) ----
-
-ALTER TABLE events RENAME TO events_legacy_test_data;
-
-CREATE TABLE events (
-  id TEXT PRIMARY KEY,
-  moderator_id TEXT NOT NULL REFERENCES moderators(id),
-  title TEXT NOT NULL,
-  organizer TEXT,
-  event_date TEXT,              -- free-text display date, e.g. "10/29(四)" — unchanged
-  ends_at TEXT NOT NULL,         -- ISO 8601 date (YYYY-MM-DD), the computable date retention is based on
-  meeting_location TEXT,
-  meeting_time TEXT,
-  fee TEXT,
-  passenger_fee TEXT,
-  capacity INTEGER,
-  cutoff_at TEXT,
-  group_link TEXT,
-  notes TEXT,
-  status TEXT NOT NULL DEFAULT 'open' CHECK(status IN ('open','full','closed')),
-  enable_attendance_type INTEGER NOT NULL DEFAULT 0,
-  enable_car_role INTEGER NOT NULL DEFAULT 0,
-  enable_plus_one INTEGER NOT NULL DEFAULT 0,
-  created_at TEXT NOT NULL DEFAULT (datetime('now'))
-);
-CREATE INDEX idx_events_moderator ON events(moderator_id);
-CREATE INDEX idx_events_ends_at ON events(ends_at);
-
--- registrations keeps its existing shape; event_id now points at the rebuilt
--- events table. No data is carried over from events_legacy_test_data for the
--- reason stated at the top of this file.
-DROP TABLE IF EXISTS registrations;
-CREATE TABLE registrations (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  event_id TEXT NOT NULL REFERENCES events(id),
-  line_user_id TEXT NOT NULL,
-  display_name TEXT,
-  picture_url TEXT,
-  role TEXT,
-  attendance_type TEXT,
-  plus_one_count INTEGER NOT NULL DEFAULT 0,
-  status TEXT NOT NULL DEFAULT 'registered' CHECK(status IN ('registered','cancelled')),
-  hide_from_roster INTEGER NOT NULL DEFAULT 0,
-  created_at TEXT NOT NULL DEFAULT (datetime('now')),
-  updated_at TEXT NOT NULL DEFAULT (datetime('now')),
-  UNIQUE(event_id, line_user_id)
-);
-CREATE INDEX idx_registrations_event ON registrations(event_id);
-
-DROP TABLE events_legacy_test_data;
-
 -- De-identified summary kept when an event itself is purged by the 1-year
 -- retention sweep (docs/OWNER-ACCESS-PRD.md §8.3 / FR allows retaining
 -- de-identified stats). No LINE user ids, display names, or other
@@ -137,3 +95,23 @@ CREATE TABLE event_archive_stats (
   final_total_headcount INTEGER NOT NULL,
   archived_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
+
+-- ---- events: additive, nullable columns only — no rename, no rebuild ----
+ALTER TABLE events ADD COLUMN moderator_id TEXT REFERENCES moderators(id);
+ALTER TABLE events ADD COLUMN ends_at TEXT; -- ISO 8601 date (YYYY-MM-DD) once set; NULL on existing rows until backfilled
+
+CREATE INDEX idx_events_moderator ON events(moderator_id);
+CREATE INDEX idx_events_ends_at ON events(ends_at);
+
+-- Every existing event predates ownership entirely; attribute them to the
+-- same synthetic moderator the legacy endpoints already use, so they stay
+-- reachable through /api/events instead of becoming orphaned (NULL
+-- moderator_id would make them invisible to every moderator-scoped query
+-- without actually deleting them — worse for operability, no safer).
+-- ends_at is deliberately left NULL here: there's no reliable source to
+-- derive a real ISO date from the old free-text event_date (e.g.
+-- "10/29(四)" has no year), and retention.ts's queries all compare
+-- `ends_at <= ?`, which SQL NULL never satisfies — so these rows simply
+-- never get swept by the retention job rather than being purged on a
+-- guessed date.
+UPDATE events SET moderator_id = 'mod_legacy_admin' WHERE moderator_id IS NULL;

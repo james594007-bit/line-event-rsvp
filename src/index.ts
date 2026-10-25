@@ -130,12 +130,14 @@ app.put('/api/events/:id', requireAdmin, async (c) => {
   if (!body.title) return c.json({ error: 'title required' }, 400)
   if (!isValidIsoDate(body.endsAt)) return c.json({ error: 'endsAt must be an ISO date (YYYY-MM-DD)' }, 400)
 
+  // scoped to LEGACY_MODERATOR_ID so the shared passcode can't touch events
+  // created through the new per-moderator system (cross-tenant bypass)
   const result = await c.env.DB.prepare(
     `UPDATE events SET
       title = ?, organizer = ?, event_date = ?, ends_at = ?, meeting_location = ?, meeting_time = ?,
       fee = ?, passenger_fee = ?, capacity = ?, cutoff_at = ?, group_link = ?, notes = ?,
       status = ?, enable_attendance_type = ?, enable_car_role = ?, enable_plus_one = ?
-     WHERE id = ?`
+     WHERE id = ? AND moderator_id = ?`
   )
     .bind(
       body.title,
@@ -154,7 +156,8 @@ app.put('/api/events/:id', requireAdmin, async (c) => {
       body.enableAttendanceType ? 1 : 0,
       body.enableCarRole ? 1 : 0,
       body.enablePlusOne ? 1 : 0,
-      id
+      id,
+      LEGACY_MODERATOR_ID
     )
     .run()
 
@@ -163,6 +166,9 @@ app.put('/api/events/:id', requireAdmin, async (c) => {
 })
 
 // ---- list recent events, with live headcount (admin only) ----
+// scoped to LEGACY_MODERATOR_ID — otherwise the shared passcode would list
+// (and thereby expose IDs for) every moderator's events, not just the
+// legacy ones it's actually allowed to manage.
 app.get('/api/events', requireAdmin, async (c) => {
   const rows = await c.env.DB.prepare(
     `SELECT e.id, e.title, e.event_date, e.capacity, e.cutoff_at, e.status, e.created_at,
@@ -170,18 +176,28 @@ app.get('/api/events', requireAdmin, async (c) => {
        COALESCE(SUM(CASE WHEN r.status = 'registered' THEN 1 + r.plus_one_count END), 0) as total_headcount
      FROM events e
      LEFT JOIN registrations r ON r.event_id = e.id
+     WHERE e.moderator_id = ?
      GROUP BY e.id
      ORDER BY e.created_at DESC
      LIMIT 50`
-  ).all()
+  )
+    .bind(LEGACY_MODERATOR_ID)
+    .all()
   return c.json(rows.results)
 })
 
 // ---- delete an event and its registrations (admin only) ----
+// Ownership is checked FIRST and registrations are only ever deleted for an
+// event actually owned by LEGACY_MODERATOR_ID — deleting registrations
+// unconditionally before checking ownership would silently wipe another
+// moderator's registration data even though their event row would survive
+// (the scoped events DELETE below would simply match 0 rows).
 app.delete('/api/events/:id', requireAdmin, async (c) => {
   const id = c.req.param('id')
+  const owned = await c.env.DB.prepare('SELECT id FROM events WHERE id = ? AND moderator_id = ?').bind(id, LEGACY_MODERATOR_ID).first()
+  if (!owned) return c.json({ error: 'not found' }, 404)
   await c.env.DB.prepare('DELETE FROM registrations WHERE event_id = ?').bind(id).run()
-  const result = await c.env.DB.prepare('DELETE FROM events WHERE id = ?').bind(id).run()
+  const result = await c.env.DB.prepare('DELETE FROM events WHERE id = ? AND moderator_id = ?').bind(id, LEGACY_MODERATOR_ID).run()
   if (result.meta.changes === 0) return c.json({ error: 'not found' }, 404)
   return c.json({ ok: true })
 })
