@@ -24,6 +24,7 @@
   .stepper button { width: 32px; height: 32px; padding: 0; margin: 0; border-radius: 50%; border: 1px solid #ddd; background: #f0f0f0; font-size: 18px; line-height: 1; color: #333; }
   .stepper span { min-width: 18px; text-align: center; font-size: 16px; font-weight: 600; }
   button { font-size: 16px; padding: 12px 20px; border-radius: 10px; border: none; width: 100%; margin-top: 8px; }
+  button:disabled { opacity: .5; cursor: not-allowed; }
   .join { background: #06c755; color: white; }
   .cancel { background: #eee; color: #333; }
   .group-link { background: #e8f8ee; border-radius: 10px; padding: 12px; margin-top: 12px; font-size: 14px; display: none; }
@@ -71,8 +72,8 @@
     </div>
   </div>
 
-  <button class="join" id="joinBtn">我要參加</button>
-  <button class="cancel" id="cancelBtn">取消報名</button>
+  <button class="join" id="joinBtn" disabled>我要參加</button>
+  <button class="cancel" id="cancelBtn" disabled>取消報名</button>
 
   <div class="group-link" id="groupLinkBox">
     已報名!記得加入活動群組 → <a id="groupLinkA" href="#" target="_blank">點我加入</a>
@@ -95,6 +96,7 @@ const attendanceLabel = { activity_only: '只參加活動', activity_and_meal: '
 
 async function loadEvent() {
   const res = await fetch(`/api/events/${eventId}`);
+  if (!res.ok) throw new Error('找不到活動');
   eventData = await res.json();
   show('title', eventData.title ?? '找不到活動');
   const info = [
@@ -179,13 +181,7 @@ async function cancel() {
 }
 
 async function init() {
-  const cfgRes = await fetch('/api/config');
-  const cfg = await cfgRes.json();
-  await liff.init({ liffId: cfg.liffId });
-  if (!liff.isLoggedIn() && !liff.isInClient()) { liff.login({ redirectUri: location.href }); return; }
-  profile = await liff.getProfile();
-  document.getElementById('joinBtn').onclick = register;
-  document.getElementById('cancelBtn').onclick = cancel;
+  if (!eventId) throw new Error('報名連結缺少活動編號');
   document.getElementById('plusOneMinus').onclick = () => {
     plusOneCount = Math.max(0, plusOneCount - 1);
     document.getElementById('plusOneValue').textContent = plusOneCount;
@@ -194,11 +190,32 @@ async function init() {
     plusOneCount = Math.min(20, plusOneCount + 1);
     document.getElementById('plusOneValue').textContent = plusOneCount;
   };
+
+  // Event information should remain visible even when an external browser or
+  // content blocker prevents the LINE SDK from reaching LINE's login service.
   await loadEvent();
   await loadRoster();
+
+  const cfgRes = await fetch('/api/config');
+  const cfg = await cfgRes.json();
+  try {
+    await liff.init({ liffId: cfg.liffId, withLoginOnExternalBrowser: true });
+  } catch (e) {
+    const message = String(e?.message ?? e);
+    showStatus(message.includes('Failed to fetch')
+      ? '活動資料已載入，但這個瀏覽器擋住了 LINE 登入服務。請把報名連結貼到 LINE 對話中，再從 LINE 開啟。'
+      : `LINE 登入暫時無法使用：${message}`);
+    return;
+  }
+  if (!liff.isLoggedIn() && !liff.isInClient()) { liff.login({ redirectUri: location.href }); return; }
+  profile = await liff.getProfile();
+  document.getElementById('joinBtn').onclick = register;
+  document.getElementById('cancelBtn').onclick = cancel;
+  document.getElementById('joinBtn').disabled = false;
+  document.getElementById('cancelBtn').disabled = false;
 }
 
-init().catch((e) => showStatus('初始化失敗: ' + e.message));
+init().catch((e) => showStatus('頁面載入失敗：' + e.message));
 </script>
 </body>
 </html>

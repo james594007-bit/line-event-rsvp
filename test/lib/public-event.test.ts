@@ -34,6 +34,7 @@ describe('toPublicEvent', () => {
     expect(pub).not.toHaveProperty('some_future_internal_field')
     expect(pub.id).toBe('ev_1')
     expect(pub.title).toBe('Test')
+    expect(pub.event_date).toBe('2026-10-29')
     expect(pub.enable_car_role).toBe(1)
   })
 })

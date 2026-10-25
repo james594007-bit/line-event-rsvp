@@ -29,7 +29,6 @@ function getFormData() {
   return {
     title: document.getElementById('f_title').value.trim(),
     organizer: document.getElementById('f_organizer').value.trim() || undefined,
-    eventDate: document.getElementById('f_eventDate').value.trim() || undefined,
     endsAt: document.getElementById('f_endsAt').value,
     meetingLocation: document.getElementById('f_meetingLocation').value.trim() || undefined,
     meetingTime: document.getElementById('f_meetingTime').value.trim() || undefined,
@@ -49,7 +48,6 @@ function getFormData() {
 function fillForm(ev) {
   document.getElementById('f_title').value = ev.title ?? '';
   document.getElementById('f_organizer').value = ev.organizer ?? '';
-  document.getElementById('f_eventDate').value = ev.event_date ?? '';
   document.getElementById('f_endsAt').value = ev.ends_at ?? '';
   document.getElementById('f_meetingLocation').value = ev.meeting_location ?? '';
   document.getElementById('f_meetingTime').value = ev.meeting_time ?? '';
@@ -122,7 +120,7 @@ async function loadEventList() {
       <div class="row">
         <div>
           <div>${escapeHtml(ev.title)} ${statusBadge}</div>
-          <div class="meta">${escapeHtml(ev.event_date ?? '')} ${ev.capacity ? `· 上限${ev.capacity}人` : ''} · 截止 ${escapeHtml(ev.cutoff_at ?? '未設定')}</div>
+          <div class="meta">${escapeHtml(ev.ends_at ?? ev.event_date ?? '')} ${ev.capacity ? `· 上限${ev.capacity}人` : ''} · 截止 ${escapeHtml(ev.cutoff_at ?? '未設定')}</div>
           <div class="headcount">${capLabel} 人報名 ${headcountExtra} · 查看名單 ▾</div>
         </div>
         <div style="display:flex; gap:10px;">

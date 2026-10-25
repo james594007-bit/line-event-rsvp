@@ -74,6 +74,20 @@ describe('event CRUD scoped to the authenticated moderator', () => {
     expect(row?.moderator_id).toBe(a.moderatorId) // not b, despite the spoofed field in the body
   })
 
+  it('uses the activity date as the single stored and displayed event date', async () => {
+    const res = await call(
+      authedRequest('/api/mod/events', a, {
+        method: 'POST',
+        body: JSON.stringify({ title: 'One date', endsAt: '2026-12-02', eventDate: 'legacy display text' }),
+      })
+    )
+    const { id } = await res.json<{ id: string }>()
+    const row = await env.DB.prepare('SELECT event_date, ends_at FROM events WHERE id = ?')
+      .bind(id)
+      .first<{ event_date: string; ends_at: string }>()
+    expect(row).toEqual({ event_date: '2026-12-02', ends_at: '2026-12-02' })
+  })
+
   it('rejects event creation without a valid ISO endsAt', async () => {
     const res = await call(authedRequest('/api/mod/events', a, { method: 'POST', body: JSON.stringify({ title: 'No date' }) }))
     expect(res.status).toBe(400)

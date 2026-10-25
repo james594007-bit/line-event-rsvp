@@ -399,7 +399,7 @@ app.get('/liff', async (c) => {
   let description = '點開看看目前報名人數,一起參加吧'
 
   if (eventId) {
-    const event = await c.env.DB.prepare('SELECT title, event_date, capacity FROM events WHERE id = ?')
+    const event = await c.env.DB.prepare('SELECT title, COALESCE(ends_at, event_date) AS event_date, capacity FROM events WHERE id = ?')
       .bind(eventId)
       .first<any>()
     if (event) {

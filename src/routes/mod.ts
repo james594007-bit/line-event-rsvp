@@ -72,7 +72,6 @@ modRoutes.get('/api/mod/events', requireAuthenticated, requireApproved, async (c
 interface EventBody {
   title?: string
   organizer?: string
-  eventDate?: string
   endsAt?: string
   meetingLocation?: string
   meetingTime?: string
@@ -106,7 +105,7 @@ modRoutes.post('/api/mod/events', requireAuthenticated, requireApproved, require
       moderator.id, // moderator_id is always the authenticated caller — never client-supplied (AC-07)
       body.title,
       body.organizer ?? null,
-      body.eventDate ?? null,
+      body.endsAt,
       body.endsAt,
       body.meetingLocation ?? null,
       body.meetingTime ?? null,
@@ -151,7 +150,7 @@ modRoutes.put('/api/mod/events/:id', requireAuthenticated, requireApproved, requ
     .bind(
       body.title,
       body.organizer ?? null,
-      body.eventDate ?? null,
+      body.endsAt,
       body.endsAt,
       body.meetingLocation ?? null,
       body.meetingTime ?? null,
