@@ -11,7 +11,7 @@
   h2 { font-size: 15px; margin-top: 28px; color: #555; }
   form { background: white; border-radius: 10px; padding: 16px; display: flex; flex-direction: column; gap: 10px; }
   label { font-size: 13px; color: #555; display: flex; flex-direction: column; gap: 4px; }
-  input[type=text], input[type=number], input[type=date], textarea { font-size: 14px; padding: 8px; border: 1px solid #ddd; border-radius: 8px; font-family: inherit; }
+  input[type=text], input[type=number], input[type=date], input[type=datetime-local], textarea { font-size: 14px; padding: 8px; border: 1px solid #ddd; border-radius: 8px; font-family: inherit; }
   textarea { min-height: 100px; }
   .checks { display: flex; flex-wrap: wrap; gap: 14px; font-size: 13px; }
   .checks label { flex-direction: row; align-items: center; gap: 6px; }
@@ -31,6 +31,15 @@
   .roster-box ul { list-style: none; padding: 0; margin: 0; }
   .roster-box li { padding: 3px 0; font-size: 13px; background: none; }
   .roster-box .tag { font-size: 10px; color: #888; background: #f0f0f0; border-radius: 6px; padding: 1px 6px; margin-left: 4px; }
+  .roster-person { display: block; border-bottom: 1px solid #f2f2f2; padding: 8px 0 !important; }
+  .roster-person-main { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+  .roster-actions { margin-left: auto; display: flex; gap: 6px; }
+  .roster-box button.roster-action { width: auto; margin: 0; padding: 4px 8px; font-size: 12px; }
+  .roster-box button.danger { background: #e0453c; }
+  .participant-editor { display: none; padding: 8px; margin-top: 6px; background: #f7f7f7; border-radius: 8px; }
+  .participant-editor label { margin-bottom: 6px; }
+  .participant-editor select, .participant-editor input { font-size: 13px; padding: 5px; }
+  .cancelled-person { display: flex; align-items: center; gap: 6px; padding: 4px 0; }
   .badge { font-size: 11px; background: #f0f0f0; color: #888; border-radius: 6px; padding: 1px 6px; }
   .blocked { background: white; border-radius: 10px; padding: 16px; font-size: 14px; }
 </style>
@@ -58,7 +67,7 @@
       </div>
       <div class="two-col">
         <label>人數上限<input type="number" id="f_capacity" min="1" /></label>
-        <label>報名截止日(顯示用)<input type="text" id="f_cutoffAt" placeholder="10/28" /></label>
+        <label>報名截止時間<input type="datetime-local" id="f_cutoffAt" /></label>
       </div>
       <label>活動群連結<input type="text" id="f_groupLink" placeholder="https://line.me/ti/g/..." /></label>
       <label>備註 / 活動聲明<textarea id="f_notes"></textarea></label>

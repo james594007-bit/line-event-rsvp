@@ -289,4 +289,64 @@ describe('participant registration identity', () => {
     const row = await env.DB.prepare('SELECT line_user_id, display_name FROM registrations WHERE event_id = ?').bind(id).first<any>()
     expect(row).toEqual({ line_user_id: 'U_verified', display_name: 'Verified' })
   })
+
+  it('lets a participant update their own registration until cutoff, then becomes read-only', async () => {
+    const moderator = await makeModeratorWithSession(env.DB)
+    const createRes = await call(
+      authedRequest('/api/mod/events', moderator, {
+        method: 'POST',
+        body: JSON.stringify({
+          title: 'Editable signup',
+          endsAt: '2099-12-02',
+          cutoffAt: '2099-12-01T23:59',
+          enableCarRole: true,
+          enablePlusOne: true,
+        }),
+      })
+    )
+    const { id } = await createRes.json<{ id: string }>()
+    const participant = await signPayload(env.COOKIE_SIGNING_SECRET, { lineUserId: 'U_editor', displayName: 'Editor' }, 600)
+    const headers = { 'Content-Type': 'application/json', Origin: ORIGIN, Cookie: `participant_identity=${participant}` }
+
+    expect((await call(new Request(`${ORIGIN}/api/events/${id}/register`, { method: 'POST', headers, body: JSON.stringify({ role: 'driver', plusOneCount: 0 }) }))).status).toBe(200)
+    expect((await call(new Request(`${ORIGIN}/api/events/${id}/register`, { method: 'POST', headers, body: JSON.stringify({ role: 'passenger', plusOneCount: 2 }) }))).status).toBe(200)
+
+    const mine = await call(new Request(`${ORIGIN}/api/events/${id}/my-registration`, { headers: { Cookie: `participant_identity=${participant}` } }))
+    expect(await mine.json()).toEqual({ status: 'registered', role: 'passenger', attendanceType: null, plusOneCount: 2 })
+
+    await env.DB.prepare(`UPDATE events SET cutoff_at = '2000-01-01T00:00' WHERE id = ?`).bind(id).run()
+    const publicEvent = await call(new Request(`${ORIGIN}/api/events/${id}`))
+    expect((await publicEvent.json<any>()).registration_closed).toBe(true)
+    expect((await call(new Request(`${ORIGIN}/api/events/${id}/register`, { method: 'POST', headers, body: JSON.stringify({ plusOneCount: 0 }) }))).status).toBe(409)
+    expect((await call(new Request(`${ORIGIN}/api/events/${id}/cancel`, { method: 'POST', headers, body: '{}' }))).status).toBe(409)
+  })
+
+  it('allows the owning moderator to edit, remove, and restore a participant with an audit trail', async () => {
+    const moderator = await makeModeratorWithSession(env.DB)
+    const createRes = await call(
+      authedRequest('/api/mod/events', moderator, { method: 'POST', body: JSON.stringify({ title: 'Managed signup', endsAt: '2099-12-01', capacity: 5 }) })
+    )
+    const { id } = await createRes.json<{ id: string }>()
+    await env.DB.prepare(
+      `INSERT INTO registrations (event_id, line_user_id, display_name, plus_one_count, status)
+       VALUES (?, 'U_managed', 'Managed', 0, 'registered')`
+    ).bind(id).run()
+
+    const edit = await call(
+      authedRequest(`/api/mod/events/${id}/registrations/U_managed`, moderator, {
+        method: 'PUT',
+        body: JSON.stringify({ role: 'driver', attendanceType: 'activity_only', plusOneCount: 1 }),
+      })
+    )
+    expect(edit.status).toBe(200)
+    expect((await call(authedRequest(`/api/mod/events/${id}/registrations/U_managed`, moderator, { method: 'DELETE' }))).status).toBe(200)
+    expect((await call(authedRequest(`/api/mod/events/${id}/registrations/U_managed/restore`, moderator, { method: 'POST', body: '{}' }))).status).toBe(200)
+
+    const registration = await env.DB.prepare(
+      `SELECT status, role, attendance_type, plus_one_count, cancelled_by FROM registrations WHERE event_id = ? AND line_user_id = 'U_managed'`
+    ).bind(id).first<any>()
+    expect(registration).toEqual({ status: 'registered', role: 'driver', attendance_type: 'activity_only', plus_one_count: 1, cancelled_by: null })
+    const audit = await env.DB.prepare(`SELECT action FROM registration_audit_log WHERE event_id = ? ORDER BY id`).bind(id).all<any>()
+    expect(audit.results.map((row) => row.action)).toEqual(['edit', 'remove', 'restore'])
+  })
 })

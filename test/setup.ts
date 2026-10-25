@@ -78,12 +78,22 @@ const STATEMENTS = [
     attendance_type TEXT,
     plus_one_count INTEGER NOT NULL DEFAULT 0,
     status TEXT NOT NULL DEFAULT 'registered' CHECK(status IN ('registered','cancelled')),
+    cancelled_by TEXT CHECK(cancelled_by IN ('participant','moderator')),
     hide_from_roster INTEGER NOT NULL DEFAULT 0,
     created_at TEXT NOT NULL DEFAULT (datetime('now')),
     updated_at TEXT NOT NULL DEFAULT (datetime('now')),
     UNIQUE(event_id, line_user_id)
   )`,
   `CREATE INDEX IF NOT EXISTS idx_registrations_event ON registrations(event_id)`,
+  `CREATE TABLE IF NOT EXISTS registration_audit_log (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    event_id TEXT NOT NULL,
+    line_user_id TEXT NOT NULL,
+    actor_moderator_id TEXT NOT NULL REFERENCES moderators(id),
+    action TEXT NOT NULL CHECK(action IN ('edit','remove','restore')),
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+  )`,
+  `CREATE INDEX IF NOT EXISTS idx_registration_audit_event ON registration_audit_log(event_id, created_at)`,
   `CREATE TABLE IF NOT EXISTS event_archive_stats (
     event_id TEXT PRIMARY KEY,
     moderator_id TEXT NOT NULL,
@@ -109,6 +119,7 @@ export async function applyTestSchema(db: D1Database) {
 
 export async function resetTestSchema(db: D1Database) {
   const tables = [
+    'registration_audit_log',
     'event_archive_stats',
     'registrations',
     'events',

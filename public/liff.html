@@ -6,6 +6,7 @@
 <title>活動報名</title>
 <style>
   body { font-family: -apple-system, "PingFang TC", sans-serif; margin: 0; padding: 16px; background: #f7f7f7; color: #222; }
+  .community { color: #06a84f; font-size: 13px; font-weight: 700; margin-bottom: 6px; }
   h1 { font-size: 20px; margin: 0 0 8px; }
   .info { background: white; border-radius: 10px; padding: 12px 14px; margin-bottom: 12px; font-size: 14px; line-height: 1.7; }
   .info div { display: flex; }
@@ -34,9 +35,11 @@
   li .tag { font-size: 11px; color: #888; background: #f0f0f0; border-radius: 6px; padding: 1px 6px; }
   img { width: 28px; height: 28px; border-radius: 50%; background: #ddd; }
   .status { padding: 10px; border-radius: 8px; background: #fff3cd; font-size: 13px; margin-bottom: 12px; display: none; }
+  footer { text-align: center; color: #999; font-size: 11px; margin: 28px 0 8px; }
 </style>
 </head>
 <body>
+  <div class="community">人生漫旅FB社團Line社群</div>
   <h1 id="title">載入中...</h1>
   <div class="info" id="info"></div>
   <div class="status" id="status"></div>
@@ -47,17 +50,17 @@
   <div class="option-group" id="attendanceTypeGroup" style="display:none">
     <div class="option-label">參加類型</div>
     <div class="role-pick">
-      <label><input type="radio" name="attendanceType" value="activity_only" checked />只參加活動</label>
-      <label><input type="radio" name="attendanceType" value="activity_and_meal" />活動+聚餐</label>
-      <label><input type="radio" name="attendanceType" value="meal_only" />聚餐</label>
+      <label><input type="radio" name="attendanceType" value="activity_only" checked disabled />只參加活動</label>
+      <label><input type="radio" name="attendanceType" value="activity_and_meal" disabled />活動+聚餐</label>
+      <label><input type="radio" name="attendanceType" value="meal_only" disabled />聚餐</label>
     </div>
   </div>
 
   <div class="option-group" id="carRoleGroup" style="display:none">
     <div class="option-label">車輛</div>
     <div class="role-pick">
-      <label><input type="radio" name="role" value="driver" checked />開車</label>
-      <label><input type="radio" name="role" value="passenger" />共乘(乘客)</label>
+      <label><input type="radio" name="role" value="driver" checked disabled />開車</label>
+      <label><input type="radio" name="role" value="passenger" disabled />共乘(乘客)</label>
     </div>
   </div>
 
@@ -65,9 +68,9 @@
     <div class="plus-one">
       <span>攜伴人數</span>
       <div class="stepper">
-        <button type="button" id="plusOneMinus">−</button>
+        <button type="button" id="plusOneMinus" disabled>−</button>
         <span id="plusOneValue">0</span>
-        <button type="button" id="plusOnePlus">＋</button>
+        <button type="button" id="plusOnePlus" disabled>＋</button>
       </div>
     </div>
   </div>
@@ -81,6 +84,8 @@
 
   <ul id="roster"></ul>
 
+  <footer>© James Lee｜報名系統開發者</footer>
+
 <script>
 const params = new URLSearchParams(location.search);
 const liffState = params.get('liff.state') ?? '';
@@ -89,10 +94,13 @@ const eventId = params.get('event') || new URLSearchParams(stateQuery).get('even
 let profile = null;
 let eventData = null;
 let plusOneCount = 0;
+let hasRegistration = false;
 
 function show(id, html) { document.getElementById(id).innerHTML = html; }
 function showStatus(msg) { const el = document.getElementById('status'); el.textContent = msg; el.style.display = 'block'; }
+function hideStatus() { document.getElementById('status').style.display = 'none'; }
 function row(label, value) { return value ? `<div><span class="label">${label}</span><span>${value}</span></div>` : ''; }
+function formatCutoff(value) { return value ? value.replace('T', ' ') : ''; }
 const attendanceLabel = { activity_only: '只參加活動', activity_and_meal: '活動+聚餐', meal_only: '聚餐' };
 
 async function loadEvent() {
@@ -108,10 +116,10 @@ async function loadEvent() {
     row('費用', eventData.fee),
     row('乘客車資', eventData.passenger_fee),
     row('人數', eventData.capacity ? `${eventData.capacity} 人` : null),
-    row('報名截止', eventData.cutoff_at),
+    row('報名截止', formatCutoff(eventData.cutoff_at)),
   ].join('');
   show('info', info + (eventData.notes ? `<div class="notes">${eventData.notes}</div>` : ''));
-  if (eventData.status === 'closed') showStatus('已截止報名,名單已確定');
+  if (eventData.registration_closed) showStatus('報名已截止，如需異動請聯絡版主。');
   if (eventData.group_link) {
     document.getElementById('groupLinkA').href = eventData.group_link;
   } else {
@@ -165,21 +173,58 @@ async function register() {
   });
   if (!res.ok) {
     const err = await res.json();
-    showStatus(err.error === 'full' ? '已經額滿了' : '報名失敗,請稍後再試');
+    showStatus(err.error === 'full' ? '已經額滿了' : err.error === 'closed' ? '報名已截止，如需異動請聯絡版主。' : '報名失敗,請稍後再試');
     return;
   }
+  hasRegistration = true;
+  document.getElementById('joinBtn').textContent = '儲存修改';
+  document.getElementById('cancelBtn').disabled = false;
+  hideStatus();
   if (eventData?.group_link) document.getElementById('groupLinkBox').style.display = 'block';
   await loadRoster();
 }
 
 async function cancel() {
-  await fetch(`/api/events/${eventId}/cancel`, {
+  const res = await fetch(`/api/events/${eventId}/cancel`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({}),
   });
+  if (!res.ok) {
+    const err = await res.json();
+    showStatus(err.error === 'closed' ? '報名已截止，如需異動請聯絡版主。' : '取消失敗，請稍後再試');
+    return;
+  }
+  hasRegistration = false;
+  document.getElementById('joinBtn').textContent = '我要參加';
+  document.getElementById('cancelBtn').disabled = true;
   document.getElementById('groupLinkBox').style.display = 'none';
   await loadRoster();
+}
+
+function setRegistrationControlsDisabled(disabled) {
+  document.querySelectorAll('input[name="role"], input[name="attendanceType"]').forEach((el) => { el.disabled = disabled; });
+  document.getElementById('plusOneMinus').disabled = disabled;
+  document.getElementById('plusOnePlus').disabled = disabled;
+  document.getElementById('joinBtn').disabled = disabled;
+  document.getElementById('cancelBtn').disabled = disabled || !hasRegistration;
+}
+
+function applyMyRegistration(registration) {
+  hasRegistration = registration?.status === 'registered';
+  if (!hasRegistration) return;
+  if (registration.role) {
+    const role = document.querySelector(`input[name="role"][value="${registration.role}"]`);
+    if (role) role.checked = true;
+  }
+  if (registration.attendanceType) {
+    const attendance = document.querySelector(`input[name="attendanceType"][value="${registration.attendanceType}"]`);
+    if (attendance) attendance.checked = true;
+  }
+  plusOneCount = registration.plusOneCount || 0;
+  document.getElementById('plusOneValue').textContent = plusOneCount;
+  document.getElementById('joinBtn').textContent = '儲存修改';
+  if (eventData?.group_link) document.getElementById('groupLinkBox').style.display = 'block';
 }
 
 async function init() {
@@ -198,14 +243,25 @@ async function init() {
 
   const meRes = await fetch('/api/participant/me');
   if (meRes.ok) profile = await meRes.json();
+  if (profile) {
+    const registrationRes = await fetch(`/api/events/${eventId}/my-registration`);
+    if (registrationRes.ok) applyMyRegistration(await registrationRes.json());
+  }
   const startLineLogin = () => {
     location.href = `/auth/line/start?purpose=participant&event=${encodeURIComponent(eventId)}`;
   };
   document.getElementById('joinBtn').onclick = profile ? register : startLineLogin;
   document.getElementById('cancelBtn').onclick = profile ? cancel : startLineLogin;
-  document.getElementById('joinBtn').disabled = false;
-  document.getElementById('cancelBtn').disabled = false;
-  if (!profile) showStatus('按下「我要參加」後，會先進行 LINE 登入，再自動回到這個活動。');
+  if (eventData.registration_closed) {
+    setRegistrationControlsDisabled(true);
+    showStatus('報名已截止，如需異動請聯絡版主。');
+    return;
+  }
+  setRegistrationControlsDisabled(false);
+  if (!profile) {
+    document.getElementById('cancelBtn').disabled = true;
+    showStatus('按下「我要參加」後，會先進行 LINE 登入，再自動回到這個活動。');
+  }
 }
 
 init().catch((e) => showStatus('頁面載入失敗：' + e.message));

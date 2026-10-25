@@ -8,6 +8,8 @@ import { checkRateLimit } from '../lib/ratelimit'
 import { verifyPayload, randomToken } from '../lib/crypto'
 import { getOwnedEvent, isValidIsoDate } from '../lib/event-ownership'
 import { VERIFIED_IDENTITY_COOKIE } from './auth'
+import { COMMUNITY_NAME } from '../lib/branding'
+import { isValidTaipeiCutoff } from '../lib/registration-window'
 
 export const modRoutes = new Hono<{ Bindings: Bindings }>()
 
@@ -15,8 +17,37 @@ function randomId(prefix: string) {
   return `${prefix}_${crypto.randomUUID().replace(/-/g, '').slice(0, 10)}`
 }
 
+const VALID_ROLES = new Set(['driver', 'passenger'])
+const VALID_ATTENDANCE_TYPES = new Set(['activity_only', 'activity_and_meal', 'meal_only'])
+
+async function registrationFitsCapacity(db: D1Database, eventId: string, lineUserId: string, plusOneCount: number, capacity: number | null) {
+  if (!capacity) return true
+  const others = await db.prepare(
+    `SELECT COALESCE(SUM(1 + plus_one_count), 0) AS n
+     FROM registrations WHERE event_id = ? AND status = 'registered' AND line_user_id != ?`
+  )
+    .bind(eventId, lineUserId)
+    .first<{ n: number }>()
+  return (others?.n ?? 0) + 1 + plusOneCount <= capacity
+}
+
+async function auditRegistrationAction(
+  db: D1Database,
+  eventId: string,
+  lineUserId: string,
+  actorModeratorId: string,
+  action: 'edit' | 'remove' | 'restore'
+) {
+  await db.prepare(
+    `INSERT INTO registration_audit_log (event_id, line_user_id, actor_moderator_id, action)
+     VALUES (?, ?, ?, ?)`
+  )
+    .bind(eventId, lineUserId, actorModeratorId, action)
+    .run()
+}
+
 // ---- community name is fixed, server-side, never editable ----
-export const FIXED_COMMUNITY_NAME = '人生漫旅FB社團Line社群'
+export const FIXED_COMMUNITY_NAME = COMMUNITY_NAME
 
 // ---- apply (bridges the verified-but-not-yet-applicant identity cookie into a real application) ----
 modRoutes.post('/api/mod/apply', requireSameOrigin, async (c) => {
@@ -93,6 +124,7 @@ modRoutes.post('/api/mod/events', requireAuthenticated, requireApproved, require
   const body = await c.req.json<EventBody>()
   if (!body.title) return c.json({ error: 'title required' }, 400)
   if (!isValidIsoDate(body.endsAt)) return c.json({ error: 'endsAt must be an ISO date (YYYY-MM-DD)' }, 400)
+  if (body.cutoffAt && !isValidTaipeiCutoff(body.cutoffAt)) return c.json({ error: 'cutoffAt must be YYYY-MM-DDTHH:mm' }, 400)
 
   const id = randomId('ev')
   await c.env.DB.prepare(
@@ -141,6 +173,7 @@ modRoutes.put('/api/mod/events/:id', requireAuthenticated, requireApproved, requ
   const body = await c.req.json<EventBody>()
   if (!body.title) return c.json({ error: 'title required' }, 400)
   if (!isValidIsoDate(body.endsAt)) return c.json({ error: 'endsAt must be an ISO date (YYYY-MM-DD)' }, 400)
+  if (body.cutoffAt && !isValidTaipeiCutoff(body.cutoffAt)) return c.json({ error: 'cutoffAt must be YYYY-MM-DDTHH:mm' }, 400)
 
   await c.env.DB.prepare(
     `UPDATE events SET
@@ -192,14 +225,15 @@ modRoutes.get('/api/mod/events/:id/roster', requireAuthenticated, requireApprove
   if (!existing) return c.json({ error: 'not_found' }, 404)
 
   const rows = await c.env.DB.prepare(
-    `SELECT display_name, picture_url, role, attendance_type, plus_one_count, hide_from_roster, created_at
+    `SELECT line_user_id, display_name, picture_url, role, attendance_type, plus_one_count, hide_from_roster, created_at
      FROM registrations WHERE event_id = ? AND status = 'registered'
      ORDER BY created_at ASC`
   )
     .bind(id)
     .all()
   const cancelledRows = await c.env.DB.prepare(
-    `SELECT display_name, hide_from_roster, updated_at FROM registrations WHERE event_id = ? AND status = 'cancelled' ORDER BY updated_at DESC`
+    `SELECT line_user_id, display_name, role, attendance_type, plus_one_count, hide_from_roster, cancelled_by, updated_at
+     FROM registrations WHERE event_id = ? AND status = 'cancelled' ORDER BY updated_at DESC`
   )
     .bind(id)
     .all()
@@ -217,13 +251,97 @@ modRoutes.get('/api/mod/events/:id/roster', requireAuthenticated, requireApprove
     activityAndMealCount: results.filter((r) => r.attendance_type === 'activity_and_meal').length,
     mealOnlyCount: results.filter((r) => r.attendance_type === 'meal_only').length,
     cancelledCount: cancelledResults.length,
+    enableAttendanceType: !!existing.enable_attendance_type,
+    enableCarRole: !!existing.enable_car_role,
+    enablePlusOne: !!existing.enable_plus_one,
     roster: results.map((r) => ({
+      lineUserId: r.line_user_id,
       displayName: r.hide_from_roster ? null : r.display_name,
       pictureUrl: r.hide_from_roster ? null : r.picture_url,
       role: r.role,
       attendanceType: r.attendance_type,
       plusOneCount: r.plus_one_count ?? 0,
     })),
-    cancelledRoster: cancelledResults.map((r) => ({ displayName: r.hide_from_roster ? null : r.display_name, cancelledAt: r.updated_at })),
+    cancelledRoster: cancelledResults.map((r) => ({
+      lineUserId: r.line_user_id,
+      displayName: r.hide_from_roster ? null : r.display_name,
+      role: r.role,
+      attendanceType: r.attendance_type,
+      plusOneCount: r.plus_one_count ?? 0,
+      cancelledBy: r.cancelled_by,
+      cancelledAt: r.updated_at,
+    })),
   })
+})
+
+modRoutes.put('/api/mod/events/:id/registrations/:lineUserId', requireAuthenticated, requireApproved, requireCsrf, requireSameOrigin, async (c) => {
+  const moderator = c.get('moderator')
+  const eventId = c.req.param('id')!
+  const lineUserId = c.req.param('lineUserId')!
+  const event = await getOwnedEvent(c.env.DB, moderator.id, eventId)
+  if (!event) return c.json({ error: 'not_found' }, 404)
+  const registration = await c.env.DB.prepare(
+    `SELECT status FROM registrations WHERE event_id = ? AND line_user_id = ?`
+  ).bind(eventId, lineUserId).first<{ status: string }>()
+  if (!registration) return c.json({ error: 'not_found' }, 404)
+  if (registration.status !== 'registered') return c.json({ error: 'not_registered' }, 409)
+
+  const body = await c.req.json<{ role?: string | null; attendanceType?: string | null; plusOneCount?: number }>()
+  if (body.role && !VALID_ROLES.has(body.role)) return c.json({ error: 'invalid_role' }, 400)
+  if (body.attendanceType && !VALID_ATTENDANCE_TYPES.has(body.attendanceType)) return c.json({ error: 'invalid_attendance_type' }, 400)
+  const plusOneCount = Math.max(0, Math.min(20, Math.floor(body.plusOneCount ?? 0)))
+  if (!(await registrationFitsCapacity(c.env.DB, eventId, lineUserId, plusOneCount, event.capacity))) {
+    return c.json({ error: 'full' }, 409)
+  }
+
+  await c.env.DB.prepare(
+    `UPDATE registrations SET role = ?, attendance_type = ?, plus_one_count = ?, updated_at = datetime('now')
+     WHERE event_id = ? AND line_user_id = ?`
+  )
+    .bind(body.role ?? null, body.attendanceType ?? null, plusOneCount, eventId, lineUserId)
+    .run()
+  await auditRegistrationAction(c.env.DB, eventId, lineUserId, moderator.id, 'edit')
+  return c.json({ ok: true })
+})
+
+modRoutes.delete('/api/mod/events/:id/registrations/:lineUserId', requireAuthenticated, requireApproved, requireCsrf, requireSameOrigin, async (c) => {
+  const moderator = c.get('moderator')
+  const eventId = c.req.param('id')!
+  const lineUserId = c.req.param('lineUserId')!
+  const event = await getOwnedEvent(c.env.DB, moderator.id, eventId)
+  if (!event) return c.json({ error: 'not_found' }, 404)
+  const result = await c.env.DB.prepare(
+    `UPDATE registrations SET status = 'cancelled', cancelled_by = 'moderator', updated_at = datetime('now')
+     WHERE event_id = ? AND line_user_id = ? AND status = 'registered'`
+  )
+    .bind(eventId, lineUserId)
+    .run()
+  if (result.meta.changes === 0) return c.json({ error: 'not_found' }, 404)
+  await auditRegistrationAction(c.env.DB, eventId, lineUserId, moderator.id, 'remove')
+  return c.json({ ok: true })
+})
+
+modRoutes.post('/api/mod/events/:id/registrations/:lineUserId/restore', requireAuthenticated, requireApproved, requireCsrf, requireSameOrigin, async (c) => {
+  const moderator = c.get('moderator')
+  const eventId = c.req.param('id')!
+  const lineUserId = c.req.param('lineUserId')!
+  const event = await getOwnedEvent(c.env.DB, moderator.id, eventId)
+  if (!event) return c.json({ error: 'not_found' }, 404)
+  const registration = await c.env.DB.prepare(
+    `SELECT status, plus_one_count FROM registrations WHERE event_id = ? AND line_user_id = ?`
+  ).bind(eventId, lineUserId).first<{ status: string; plus_one_count: number }>()
+  if (!registration) return c.json({ error: 'not_found' }, 404)
+  if (registration.status !== 'cancelled') return c.json({ error: 'already_registered' }, 409)
+  if (!(await registrationFitsCapacity(c.env.DB, eventId, lineUserId, registration.plus_one_count ?? 0, event.capacity))) {
+    return c.json({ error: 'full' }, 409)
+  }
+
+  await c.env.DB.prepare(
+    `UPDATE registrations SET status = 'registered', cancelled_by = NULL, updated_at = datetime('now')
+     WHERE event_id = ? AND line_user_id = ?`
+  )
+    .bind(eventId, lineUserId)
+    .run()
+  await auditRegistrationAction(c.env.DB, eventId, lineUserId, moderator.id, 'restore')
+  return c.json({ ok: true })
 })

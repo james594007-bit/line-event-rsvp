@@ -13,6 +13,8 @@ import { runRetentionSweep } from './lib/retention'
 import { verifyPayload } from './lib/crypto'
 import { requireSameOrigin } from './middleware'
 import { eventIdFromSearch, eventPreviewDescription } from './lib/link-preview'
+import { COMMUNITY_NAME, COPYRIGHT_OWNER } from './lib/branding'
+import { isRegistrationClosed } from './lib/registration-window'
 
 // Synthetic moderator row (seeded in migrations/0003) that legacy,
 // passcode-gated events are attributed to, since the shared-passcode model
@@ -213,7 +215,28 @@ app.get('/api/events/:id', async (c) => {
   if (!event) return c.json({ error: 'not found' }, 404)
   // whitelist fields only — `events` now also carries moderator_id/ends_at,
   // neither of which this public, unauthenticated endpoint may return.
-  return c.json(toPublicEvent(event))
+  return c.json({ ...toPublicEvent(event), registration_closed: isRegistrationClosed(event) })
+})
+
+app.get('/api/events/:id/my-registration', async (c) => {
+  const identity = await verifyPayload<{ lineUserId: string }>(c.env.COOKIE_SIGNING_SECRET, getCookie(c, PARTICIPANT_IDENTITY_COOKIE))
+  if (!identity) return c.json({ error: 'unauthorized' }, 401)
+  const registration = await c.env.DB.prepare(
+    `SELECT status, role, attendance_type, plus_one_count
+     FROM registrations WHERE event_id = ? AND line_user_id = ?`
+  )
+    .bind(c.req.param('id'), identity.lineUserId)
+    .first<any>()
+  return c.json(
+    registration
+      ? {
+          status: registration.status,
+          role: registration.role,
+          attendanceType: registration.attendance_type,
+          plusOneCount: registration.plus_one_count ?? 0,
+        }
+      : { status: 'none' }
+  )
 })
 
 app.get('/api/events/:id/roster', async (c) => {
@@ -278,7 +301,7 @@ app.post('/api/events/:id/register', requireSameOrigin, async (c) => {
 
   const event = await c.env.DB.prepare('SELECT * FROM events WHERE id = ?').bind(id).first<any>()
   if (!event) return c.json({ error: 'not found' }, 404)
-  if (event.status === 'closed') return c.json({ error: 'closed' }, 409)
+  if (isRegistrationClosed(event)) return c.json({ error: 'closed' }, 409)
 
   if (event.capacity) {
     // headcount from everyone else already registered (+1 per person, plus their companions)
@@ -302,7 +325,7 @@ app.post('/api/events/:id/register', requireSameOrigin, async (c) => {
        status = 'registered', display_name = excluded.display_name,
        picture_url = excluded.picture_url, role = excluded.role,
        attendance_type = excluded.attendance_type, plus_one_count = excluded.plus_one_count,
-       hide_from_roster = excluded.hide_from_roster,
+       hide_from_roster = excluded.hide_from_roster, cancelled_by = NULL,
        updated_at = datetime('now')`
   )
     .bind(
@@ -324,8 +347,11 @@ app.post('/api/events/:id/cancel', requireSameOrigin, async (c) => {
   const id = c.req.param('id')
   const identity = await verifyPayload<{ lineUserId: string }>(c.env.COOKIE_SIGNING_SECRET, getCookie(c, PARTICIPANT_IDENTITY_COOKIE))
   if (!identity) return c.json({ error: 'unauthorized' }, 401)
+  const event = await c.env.DB.prepare('SELECT status, cutoff_at FROM events WHERE id = ?').bind(id).first<any>()
+  if (!event) return c.json({ error: 'not found' }, 404)
+  if (isRegistrationClosed(event)) return c.json({ error: 'closed' }, 409)
   await c.env.DB.prepare(
-    `UPDATE registrations SET status = 'cancelled', updated_at = datetime('now')
+    `UPDATE registrations SET status = 'cancelled', cancelled_by = 'participant', updated_at = datetime('now')
      WHERE event_id = ? AND line_user_id = ?`
   )
     .bind(id, identity.lineUserId)
@@ -400,8 +426,8 @@ function escapeHtml(s: string) {
 
 app.get('/liff', async (c) => {
   const eventId = eventIdFromSearch(new URL(c.req.url).search)
-  let title = '活動報名系統'
-  let description = '點開看看目前報名人數,一起參加吧'
+  let title = `${COMMUNITY_NAME}｜活動報名`
+  let description = `活動報名系統開發者：${COPYRIGHT_OWNER}`
 
   if (eventId) {
     const event = await c.env.DB.prepare(
@@ -412,7 +438,7 @@ app.get('/liff', async (c) => {
       .bind(eventId)
       .first<any>()
     if (event) {
-      title = event.title
+      title = `${COMMUNITY_NAME}｜${event.title}`
       description = eventPreviewDescription({
         eventDate: event.event_date,
         meetingLocation: event.activity_location,

@@ -158,14 +158,72 @@ async function toggleRoster(id, li) {
   const listEl = box.querySelector('.roster-registered');
   listEl.innerHTML = data.roster.length
     ? data.roster
-        .map((r) => `<li>${escapeHtml(r.displayName ?? '(隱藏姓名)')} ${rosterEntryTags(r).map((t) => `<span class="tag">${t}</span>`).join('')}</li>`)
+        .map((r) => {
+          const roleEditor = data.enableCarRole
+            ? `<label>車輛<select class="edit-role"><option value="driver" ${r.role === 'driver' ? 'selected' : ''}>開車</option><option value="passenger" ${r.role === 'passenger' ? 'selected' : ''}>共乘</option></select></label>`
+            : '';
+          const attendanceEditor = data.enableAttendanceType
+            ? `<label>參加類型<select class="edit-attendance"><option value="activity_only" ${r.attendanceType === 'activity_only' ? 'selected' : ''}>只參加活動</option><option value="activity_and_meal" ${r.attendanceType === 'activity_and_meal' ? 'selected' : ''}>活動+聚餐</option><option value="meal_only" ${r.attendanceType === 'meal_only' ? 'selected' : ''}>聚餐</option></select></label>`
+            : '';
+          const plusOneEditor = data.enablePlusOne
+            ? `<label>攜伴人數<input class="edit-plus-one" type="number" min="0" max="20" value="${r.plusOneCount || 0}" /></label>`
+            : '';
+          return `<li class="roster-person" data-user-id="${escapeHtml(r.lineUserId)}">
+            <div class="roster-person-main">
+              <span>${escapeHtml(r.displayName ?? '(隱藏姓名)')}</span>
+              ${rosterEntryTags(r).map((t) => `<span class="tag">${t}</span>`).join('')}
+              <span class="roster-actions">
+                <button type="button" class="roster-action secondary participant-edit">修改</button>
+                <button type="button" class="roster-action danger participant-remove">移除</button>
+              </span>
+            </div>
+            <div class="participant-editor">${roleEditor}${attendanceEditor}${plusOneEditor}<button type="button" class="roster-action participant-save">儲存</button></div>
+          </li>`;
+        })
         .join('')
     : '<li style="color:#aaa">還沒有人報名</li>';
 
   const cancelledEl = box.querySelector('.roster-cancelled');
   cancelledEl.innerHTML = data.cancelledRoster.length
-    ? `<div class="meta" style="margin-top:6px;">已取消:${data.cancelledRoster.map((r) => escapeHtml(r.displayName ?? '(隱藏姓名)')).join('、')}</div>`
+    ? `<div class="meta" style="margin-top:6px;">已取消／移除</div>${data.cancelledRoster.map((r) => `<div class="cancelled-person"><span>${escapeHtml(r.displayName ?? '(隱藏姓名)')}（${r.cancelledBy === 'moderator' ? '版主移除' : '自行取消'}）</span><button type="button" class="roster-action secondary participant-restore" data-user-id="${escapeHtml(r.lineUserId)}">恢復報名</button></div>`).join('')}`
     : '';
+
+  listEl.querySelectorAll('.participant-edit').forEach((button) => {
+    button.onclick = () => {
+      const editor = button.closest('.roster-person').querySelector('.participant-editor');
+      editor.style.display = editor.style.display === 'block' ? 'none' : 'block';
+    };
+  });
+  listEl.querySelectorAll('.participant-save').forEach((button) => {
+    button.onclick = async () => {
+      const person = button.closest('.roster-person');
+      const payload = {
+        role: person.querySelector('.edit-role')?.value,
+        attendanceType: person.querySelector('.edit-attendance')?.value,
+        plusOneCount: parseInt(person.querySelector('.edit-plus-one')?.value || '0', 10),
+      };
+      const response = await modFetch(`/api/mod/events/${id}/registrations/${encodeURIComponent(person.dataset.userId)}`, { method: 'PUT', body: JSON.stringify(payload) });
+      if (!response.ok) { const err = await response.json(); alert(err.error === 'full' ? '修改後會超過人數上限' : '修改失敗'); return; }
+      await loadEventList();
+    };
+  });
+  listEl.querySelectorAll('.participant-remove').forEach((button) => {
+    button.onclick = async () => {
+      const person = button.closest('.roster-person');
+      const name = person.querySelector('.roster-person-main span')?.textContent || '這位參加者';
+      if (!confirm(`確定要移除「${name}」的報名嗎？之後仍可恢復。`)) return;
+      const response = await modFetch(`/api/mod/events/${id}/registrations/${encodeURIComponent(person.dataset.userId)}`, { method: 'DELETE' });
+      if (!response.ok) { alert('移除失敗'); return; }
+      await loadEventList();
+    };
+  });
+  cancelledEl.querySelectorAll('.participant-restore').forEach((button) => {
+    button.onclick = async () => {
+      const response = await modFetch(`/api/mod/events/${id}/registrations/${encodeURIComponent(button.dataset.userId)}/restore`, { method: 'POST', body: JSON.stringify({}) });
+      if (!response.ok) { const err = await response.json(); alert(err.error === 'full' ? '恢復後會超過人數上限' : '恢復失敗'); return; }
+      await loadEventList();
+    };
+  });
 
   box.querySelector('.copy-roster').onclick = () => {
     const lines = [
