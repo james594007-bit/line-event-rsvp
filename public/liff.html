@@ -201,6 +201,8 @@ async function init() {
     if (!cfgRes.ok) throw new Error('LINE 設定讀取失敗');
     const cfg = await cfgRes.json();
     await liff.init({ liffId: cfg.liffId, withLoginOnExternalBrowser: true });
+    if (!liff.isLoggedIn() && !liff.isInClient()) { liff.login({ redirectUri: location.href }); return; }
+    profile = await liff.getProfile();
   } catch (e) {
     const message = String(e?.message ?? e);
     showStatus(message.includes('Failed to fetch')
@@ -208,8 +210,6 @@ async function init() {
       : `LINE 登入暫時無法使用：${message}`);
     return;
   }
-  if (!liff.isLoggedIn() && !liff.isInClient()) { liff.login({ redirectUri: location.href }); return; }
-  profile = await liff.getProfile();
   document.getElementById('joinBtn').onclick = register;
   document.getElementById('cancelBtn').onclick = cancel;
   document.getElementById('joinBtn').disabled = false;
