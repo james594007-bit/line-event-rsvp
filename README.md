@@ -2,6 +2,8 @@
 
 LINE 活動報名統計工具 MVP。參加者在 LINE 裡打開一個連結報名/取消,任何人都能即時看到人數和名單(含開車/共乘);活動群連結報名時就直接顯示,不用等成團。
 
+正式版的申請、核准、建立活動與名單管理方式請見：[操作說明](docs/USER-GUIDE.md)。
+
 ## 架構
 
 - Cloudflare Workers + D1(跟 fathub-web 處理 Lemon webhook 同一套,不用學新部署方式)
