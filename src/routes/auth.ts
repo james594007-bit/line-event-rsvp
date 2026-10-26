@@ -29,6 +29,7 @@ authRoutes.get('/auth/line/start', async (c) => {
   const pkce = await generatePkce()
   const purpose = c.req.query('purpose') === 'participant' ? 'participant' : 'moderator'
   const eventId = purpose === 'participant' ? c.req.query('event') : undefined
+  const returnTo = purpose === 'moderator' && c.req.query('returnTo') === 'owner' ? 'owner' : undefined
   if (purpose === 'participant' && (!eventId || !/^ev_[A-Za-z0-9_-]+$/.test(eventId))) {
     return c.text('報名連結缺少有效的活動編號', 400)
   }
@@ -36,7 +37,7 @@ authRoutes.get('/auth/line/start', async (c) => {
   // HMAC-signed and expiry-bound (not just JSON) — this cookie is round-tripped
   // through the user's browser for up to 10 minutes before the callback trusts
   // state/nonce/verifier out of it, so it must be tamper-evident, not just opaque.
-  const bundle = await signPayload(c.env.COOKIE_SIGNING_SECRET, { state, nonce, verifier: pkce.verifier, purpose, eventId }, 600)
+  const bundle = await signPayload(c.env.COOKIE_SIGNING_SECRET, { state, nonce, verifier: pkce.verifier, purpose, eventId, returnTo }, 600)
   setCookie(c, OAUTH_BUNDLE_COOKIE, bundle, {
     httpOnly: true,
     secure: true,
@@ -59,7 +60,7 @@ authRoutes.get('/auth/line/callback', async (c) => {
 
   const bundleRaw = getCookie(c, OAUTH_BUNDLE_COOKIE)
   deleteCookie(c, OAUTH_BUNDLE_COOKIE, { path: '/' })
-  const bundle = await verifyPayload<{ state: string; nonce: string; verifier: string; purpose?: 'moderator' | 'participant'; eventId?: string }>(
+  const bundle = await verifyPayload<{ state: string; nonce: string; verifier: string; purpose?: 'moderator' | 'participant'; eventId?: string; returnTo?: 'owner' }>(
     c.env.COOKIE_SIGNING_SECRET,
     bundleRaw
   )
@@ -106,7 +107,7 @@ authRoutes.get('/auth/line/callback', async (c) => {
     setCookie(c, SESSION_COOKIE_NAME, token, { httpOnly: true, secure: true, sameSite: 'Lax', path: '/', expires: new Date(expiresAt) })
     const csrfToken = randomToken(16)
     setCookie(c, CSRF_COOKIE_NAME, csrfToken, { httpOnly: false, secure: true, sameSite: 'Lax', path: '/', expires: new Date(expiresAt) })
-    return c.redirect('/mod', 302)
+    return c.redirect(bundle.returnTo === 'owner' && moderator.role === 'owner' ? '/owner' : '/mod', 302)
   }
 
   // Verified via LINE, but no moderator row exists yet — bridge to the apply

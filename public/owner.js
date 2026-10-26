@@ -10,7 +10,7 @@ async function ownerFetch(url, options = {}) {
     if (options.body && !headers.has('Content-Type')) headers.set('Content-Type', 'application/json');
   }
   const res = await fetch(url, { ...options, headers });
-  if (res.status === 401) { location.href = '/mod-apply'; throw new Error('unauthorized'); }
+  if (res.status === 401) { location.href = '/auth/line/start?returnTo=owner'; throw new Error('unauthorized'); }
   return res;
 }
 
@@ -77,7 +77,7 @@ async function loadAll() {
 
 async function init() {
   const meRes = await fetch('/api/mod/me');
-  if (!meRes.ok) { location.href = '/mod-apply'; return; }
+  if (!meRes.ok) { location.href = '/auth/line/start?returnTo=owner'; return; }
   const me = await meRes.json();
   if (me.role !== 'owner') {
     document.getElementById('blocked').style.display = 'block';

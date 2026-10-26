@@ -167,6 +167,23 @@ describe('/auth/line/callback — happy path with a valid signed cookie (LINE ne
     expect(res.headers.get('set-cookie')).toContain('mod_session=')
   })
 
+  it('the owner returns to /owner when login started from the owner dashboard', async () => {
+    await env.DB.prepare(
+      `INSERT INTO moderators (id, line_user_id, role, status) VALUES ('mod_owner', 'U_owner', 'owner', 'approved')`
+    ).run()
+
+    const { state, nonce, cookieVal } = await startAndGetBundle('/auth/line/start?returnTo=owner')
+    mockLineNetwork(nonce, 'U_owner')
+
+    const res = await call(
+      new Request(`${ORIGIN}/auth/line/callback?state=${state}&code=anycode`, { headers: { Cookie: `line_oauth=${cookieVal}` }, redirect: 'manual' })
+    )
+
+    expect(res.status).toBe(302)
+    expect(res.headers.get('location')).toBe('/owner')
+    expect(res.headers.get('set-cookie')).toContain('mod_session=')
+  })
+
   it('a participant login returns to the same event with a verified participant cookie', async () => {
     const { state, nonce, cookieVal } = await startAndGetBundle('/auth/line/start?purpose=participant&event=ev_test123')
     mockLineNetwork(nonce, 'U_participant')
