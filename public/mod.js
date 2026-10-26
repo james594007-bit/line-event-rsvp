@@ -272,7 +272,7 @@ async function init() {
   const me = await meRes.json();
   if (me.status !== 'approved') {
     document.getElementById('blocked').style.display = 'block';
-    document.getElementById('blocked').textContent = `目前狀態:${me.status},還不能使用版主後台,請到申請頁查看。`;
+    document.getElementById('blocked').textContent = `目前狀態:${me.status}，還不能使用活動管理工具，請到申請頁查看。`;
     return;
   }
 

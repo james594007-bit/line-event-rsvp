@@ -1,9 +1,9 @@
-const statusLabel = { pending: '待審核', approved: '已核准', rejected: '未通過', suspended: '已停權' };
+const statusLabel = { pending: '等待開通', approved: '已開通', rejected: '未開通', suspended: '已停用' };
 const statusExplain = {
-  pending: '申請已送出,等待擁有者審核。',
-  approved: '你已經是版主了,前往管理頁面。',
-  rejected: '很抱歉,申請未通過。你可以重新申請。',
-  suspended: '你的版主權限已被停權,請聯絡擁有者。',
+  pending: '申請已送出，等待工具管理者開通。',
+  approved: '活動工具已開通，可以前往建立及管理活動。',
+  rejected: '這次申請未開通。如有需要，可以重新申請。',
+  suspended: '活動工具目前已停用，請聯絡工具管理者。',
 };
 
 function show(id, html) { document.getElementById(id).innerHTML = html; }
@@ -21,7 +21,7 @@ async function refreshStatus() {
 
   const btn = document.getElementById('actionBtn');
   if (data.status === 'approved') {
-    btn.textContent = '前往管理頁面';
+    btn.textContent = '前往活動管理工具';
     btn.onclick = () => { location.href = '/mod'; };
   } else if (data.status === 'rejected') {
     btn.textContent = '重新申請';
